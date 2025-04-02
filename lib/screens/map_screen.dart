@@ -2,12 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
+import 'package:geolocator/geolocator.dart'; // Add this package for location
 
 import '../models/locations.dart' as Locations;
 import '../models/place_list.dart';
 import '../services/place_list_service.dart';
 import '../services/place_search_service.dart' as search;
 import '../widgets/place_list_drawer.dart';
+import '../widgets/location_change_dialog.dart'; // We'll create this
 
 class MapScreen extends StatefulWidget {
   const MapScreen({Key? key}) : super(key: key);
@@ -28,8 +30,9 @@ class _MapScreenState extends State<MapScreen>
   Locations.Locations? _locations;
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
 
-  // User's current location (default to Portland, OR)
-  final LatLng _initialPosition = const LatLng(45.521563, -122.677433);
+  // Default fallback position (Portland, OR)
+  LatLng _currentPosition = const LatLng(45.521563, -122.677433);
+  bool _locationDetermined = false;
 
   // For location search within the map
   final _searchController = TextEditingController();
@@ -44,6 +47,7 @@ class _MapScreenState extends State<MapScreen>
   @override
   void initState() {
     super.initState();
+    _getCurrentLocation();
     _loadData();
   }
 
@@ -51,6 +55,101 @@ class _MapScreenState extends State<MapScreen>
   void dispose() {
     _searchController.dispose();
     super.dispose();
+  }
+
+  // Get user's current location
+  Future<void> _getCurrentLocation() async {
+    bool serviceEnabled;
+    LocationPermission permission;
+
+    // Check if location services are enabled
+    serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) {
+      // Location services are not enabled, inform user and return
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+                'Location services are disabled. Please enable to use your current location.'),
+            duration: Duration(seconds: 3),
+          ),
+        );
+      }
+      setState(() {
+        _locationDetermined = true;
+      });
+      return;
+    }
+
+    // Check location permission
+    permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+      if (permission == LocationPermission.denied) {
+        // Permission denied, inform user and return
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content:
+                  Text('Location permission denied. Using default location.'),
+              duration: Duration(seconds: 3),
+            ),
+          );
+        }
+        setState(() {
+          _locationDetermined = true;
+        });
+        return;
+      }
+    }
+
+    if (permission == LocationPermission.deniedForever) {
+      // Permission permanently denied, inform user and return
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+                'Location permission permanently denied. Using default location.'),
+            duration: Duration(seconds: 3),
+          ),
+        );
+      }
+      setState(() {
+        _locationDetermined = true;
+      });
+      return;
+    }
+
+    // Permission granted, get current position
+    try {
+      final position = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+      );
+
+      setState(() {
+        _currentPosition = LatLng(position.latitude, position.longitude);
+        _locationDetermined = true;
+      });
+
+      // If map is already initialized, move to current location
+      if (_isLoading == false && _mapController != null) {
+        _mapController.animateCamera(
+          CameraUpdate.newLatLngZoom(_currentPosition, 14.0),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to get current location: $e'),
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+      setState(() {
+        _locationDetermined = true;
+      });
+    }
   }
 
   Future<void> _loadData() async {
@@ -63,6 +162,13 @@ class _MapScreenState extends State<MapScreen>
     });
 
     _updateMarkers();
+
+    // Once data is loaded and map is initialized, zoom to current location
+    if (_locationDetermined && _mapController != null) {
+      _mapController.animateCamera(
+        CameraUpdate.newLatLngZoom(_currentPosition, 14.0),
+      );
+    }
   }
 
   void _updateMarkers() {
@@ -73,7 +179,17 @@ class _MapScreenState extends State<MapScreen>
       return Marker(
         markerId: MarkerId(office.id),
         position: LatLng(office.lat, office.lng),
-        onTap: () => _onMarkerTapped(office),
+        infoWindow: InfoWindow(
+          title: office.name,
+          snippet: office.address,
+        ),
+        onTap: () {
+          // First show the info window
+          // Then call the tap handler after a small delay
+          Future.delayed(const Duration(milliseconds: 300), () {
+            _onMarkerTapped(office);
+          });
+        },
       );
     }).toSet();
 
@@ -81,6 +197,12 @@ class _MapScreenState extends State<MapScreen>
       _markers.clear();
       _markers.addAll(markers);
     });
+
+    if (_mapController != null) {
+      for (final marker in _markers) {
+        _mapController.showMarkerInfoWindow(marker.markerId);
+      }
+    }
   }
 
   void _onMarkerTapped(Locations.Office office) {
@@ -111,6 +233,44 @@ class _MapScreenState extends State<MapScreen>
 
   void _onMapCreated(GoogleMapController controller) {
     _mapController = controller;
+
+    // If location is already determined, move camera to current location
+    if (_locationDetermined) {
+      _mapController.animateCamera(
+        CameraUpdate.newLatLngZoom(_currentPosition, 14.0),
+      );
+    }
+
+    // Show all marker info windows after map is created
+    for (final marker in _markers) {
+      _mapController.showMarkerInfoWindow(marker.markerId);
+    }
+  }
+
+  // Show dialog to change location
+  void _showChangeLocationDialog() {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return LocationChangeDialog(
+          onLocationSelected: (LatLng location, String locationName) {
+            setState(() {
+              _currentPosition = location;
+            });
+
+            // Move camera to new location
+            _mapController.animateCamera(
+              CameraUpdate.newLatLngZoom(location, 14.0),
+            );
+
+            // Show confirmation
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('Location changed to $locationName')),
+            );
+          },
+        );
+      },
+    );
   }
 
   Future<void> _searchPlacesOnMap() async {
@@ -159,7 +319,17 @@ class _MapScreenState extends State<MapScreen>
         return Marker(
           markerId: MarkerId(result.id),
           position: LatLng(result.lat, result.lng),
-          onTap: () => _onCustomMarkerTapped(result.toPlace()),
+          infoWindow: InfoWindow(
+            title: result.name,
+            snippet: result.address,
+          ),
+          onTap: () {
+            // First show the info window
+            // Then call the tap handler after a small delay
+            Future.delayed(const Duration(milliseconds: 300), () {
+              _onCustomMarkerTapped(result.toPlace());
+            });
+          },
         );
       }).toSet();
 
@@ -221,6 +391,10 @@ class _MapScreenState extends State<MapScreen>
     final marker = Marker(
       markerId: MarkerId(newPlace.id),
       position: position,
+      infoWindow: InfoWindow(
+        title: newPlace.name,
+        snippet: newPlace.address,
+      ),
       onTap: () => _onCustomMarkerTapped(newPlace),
     );
 
@@ -265,6 +439,11 @@ class _MapScreenState extends State<MapScreen>
             },
           ),
           IconButton(
+            icon: const Icon(Icons.location_on),
+            tooltip: 'Change location',
+            onPressed: _showChangeLocationDialog,
+          ),
+          IconButton(
             icon: Icon(_isAddingPin
                 ? Icons.push_pin
                 : Icons.add_location_alt_outlined),
@@ -280,8 +459,8 @@ class _MapScreenState extends State<MapScreen>
                 GoogleMap(
                   onMapCreated: _onMapCreated,
                   initialCameraPosition: CameraPosition(
-                    target: _initialPosition,
-                    zoom: 11.0,
+                    target: _currentPosition, // Use current position
+                    zoom: 14.0,
                   ),
                   markers: _markers,
                   myLocationEnabled: true,

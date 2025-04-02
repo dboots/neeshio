@@ -37,6 +37,7 @@ dependencies:
   shared_preferences:
   uuid:
   provider:
+  geolocator:
 
 dev_dependencies:
   flutter_test:

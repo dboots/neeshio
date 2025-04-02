@@ -11,8 +11,10 @@ class MarkerService {
     return Marker(
       markerId: MarkerId(office.id),
       position: LatLng(office.lat, office.lng),
-      // Remove info window to prioritize drawer opening
-      infoWindow: const InfoWindow(),
+      infoWindow: InfoWindow(
+        title: office.name,
+        snippet: office.address,
+      ),
       onTap: () => onTap(office),
     );
   }
@@ -25,8 +27,10 @@ class MarkerService {
     return Marker(
       markerId: MarkerId(place.id),
       position: LatLng(place.lat, place.lng),
-      // Remove info window to prioritize drawer opening
-      infoWindow: const InfoWindow(),
+      infoWindow: InfoWindow(
+        title: place.name,
+        snippet: place.address,
+      ),
       onTap: () => onTap(place),
     );
   }
