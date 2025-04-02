@@ -1,20 +1,18 @@
 import 'package:google_maps_flutter/google_maps_flutter.dart';
-import '../models/locations.dart' as locations;
+import '../models/locations.dart' as Locations;
 import '../models/place_list.dart';
 
 class MarkerService {
   // Convert an Office to a Marker
   Marker createMarkerFromOffice({
-    required locations.Office office,
-    required Function(locations.Office) onTap,
+    required Locations.Office office,
+    required Function(Locations.Office) onTap,
   }) {
     return Marker(
       markerId: MarkerId(office.id),
       position: LatLng(office.lat, office.lng),
-      infoWindow: InfoWindow(
-        title: office.name,
-        snippet: office.address,
-      ),
+      // Remove info window to prioritize drawer opening
+      infoWindow: const InfoWindow(),
       onTap: () => onTap(office),
     );
   }
@@ -27,18 +25,16 @@ class MarkerService {
     return Marker(
       markerId: MarkerId(place.id),
       position: LatLng(place.lat, place.lng),
-      infoWindow: InfoWindow(
-        title: place.name,
-        snippet: place.address,
-      ),
+      // Remove info window to prioritize drawer opening
+      infoWindow: const InfoWindow(),
       onTap: () => onTap(place),
     );
   }
 
   // Create markers from a list of offices
   Set<Marker> createMarkersFromOffices({
-    required List<locations.Office> offices,
-    required Function(locations.Office) onTap,
+    required List<Locations.Office> offices,
+    required Function(Locations.Office) onTap,
   }) {
     return offices
         .map((office) => createMarkerFromOffice(

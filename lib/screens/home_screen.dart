@@ -3,7 +3,6 @@ import 'package:provider/provider.dart';
 
 import '../services/place_list_service.dart';
 import 'map_screen.dart';
-import 'search_screen.dart';
 import 'saved_lists_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -55,7 +54,6 @@ class _HomeScreenState extends State<HomeScreen> {
         physics: const NeverScrollableScrollPhysics(), // Disable swiping
         children: const [
           MapScreen(),
-          SearchScreen(),
           SavedListsScreen(),
         ],
       ),
@@ -66,10 +64,6 @@ class _HomeScreenState extends State<HomeScreen> {
           NavigationDestination(
             icon: Icon(Icons.map),
             label: 'Map',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.search),
-            label: 'Search',
           ),
           NavigationDestination(
             icon: Icon(Icons.list),
