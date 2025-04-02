@@ -1,0 +1,63 @@
+import 'package:google_maps_flutter/google_maps_flutter.dart';
+import '../models/locations.dart' as locations;
+import '../models/place_list.dart';
+
+class MarkerService {
+  // Convert an Office to a Marker
+  Marker createMarkerFromOffice({
+    required locations.Office office,
+    required Function(locations.Office) onTap,
+  }) {
+    return Marker(
+      markerId: MarkerId(office.id),
+      position: LatLng(office.lat, office.lng),
+      infoWindow: InfoWindow(
+        title: office.name,
+        snippet: office.address,
+      ),
+      onTap: () => onTap(office),
+    );
+  }
+
+  // Convert a Place to a Marker
+  Marker createMarkerFromPlace({
+    required Place place,
+    required Function(Place) onTap,
+  }) {
+    return Marker(
+      markerId: MarkerId(place.id),
+      position: LatLng(place.lat, place.lng),
+      infoWindow: InfoWindow(
+        title: place.name,
+        snippet: place.address,
+      ),
+      onTap: () => onTap(place),
+    );
+  }
+
+  // Create markers from a list of offices
+  Set<Marker> createMarkersFromOffices({
+    required List<locations.Office> offices,
+    required Function(locations.Office) onTap,
+  }) {
+    return offices
+        .map((office) => createMarkerFromOffice(
+              office: office,
+              onTap: onTap,
+            ))
+        .toSet();
+  }
+
+  // Create markers from a list of places
+  Set<Marker> createMarkersFromPlaces({
+    required List<Place> places,
+    required Function(Place) onTap,
+  }) {
+    return places
+        .map((place) => createMarkerFromPlace(
+              place: place,
+              onTap: onTap,
+            ))
+        .toSet();
+  }
+}
