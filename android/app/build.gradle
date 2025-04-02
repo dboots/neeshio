@@ -5,6 +5,17 @@ plugins {
     id "dev.flutter.flutter-gradle-plugin"
 }
 
+def dartEnvironmentVariables = []
+
+if (project.hasProperty('dart-defines')) {
+    dartEnvironmentVariables = project.property('dart-defines')
+        .split(',')
+        .collectEntries { entry ->
+            def pair = new String(entry.decodeBase64(), 'UTF-8').split('=')
+            [(pair.first()): pair.last()]
+        }
+}
+
 android {
     namespace = "com.example.neesh"
     compileSdk = flutter.compileSdkVersion
@@ -20,6 +31,7 @@ android {
     }
 
     defaultConfig {
+        manifestPlaceholders['GOOGLE_MAPS_KEY'] = dartEnvironmentVariables.GOOGLE_MAPS_KEY
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
         applicationId = "com.example.neesh"
         minSdk = 21

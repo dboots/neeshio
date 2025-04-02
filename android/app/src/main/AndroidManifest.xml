@@ -1,12 +1,14 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.INTERNET"/>
     <application
         android:label="google_maps_in_flutter"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
 
+
         <!-- TODO: Add your Google Maps API key here -->
         <meta-data android:name="com.google.android.geo.API_KEY"
-            android:value="AIzaSyAMCGLBilPG4uqTubzeAP9oxX8Mpi7pVvU" />
+            android:value="${GOOGLE_MAPS_KEY}" />
 
         <activity
             android:name=".MainActivity"
