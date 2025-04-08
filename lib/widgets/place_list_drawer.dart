@@ -9,10 +9,10 @@ class PlaceListDrawer extends StatefulWidget {
   final VoidCallback? onClose;
 
   const PlaceListDrawer({
-    super.key,
+    Key? key,
     required this.place,
     this.onClose,
-  });
+  }) : super(key: key);
 
   @override
   State<PlaceListDrawer> createState() => _PlaceListDrawerState();
@@ -22,6 +22,7 @@ class _PlaceListDrawerState extends State<PlaceListDrawer> {
   final _newListController = TextEditingController();
   final _newListDescriptionController = TextEditingController();
   bool _isCreatingNewList = false;
+  int _selectedRating = 0; // 0 means not rated
 
   @override
   void dispose() {
@@ -37,10 +38,11 @@ class _PlaceListDrawerState extends State<PlaceListDrawer> {
         child: Column(
           children: [
             _buildHeader(),
+            _buildRatingSelector(),
             Expanded(
-              child: _isCreatingNewList 
-                ? _buildCreateNewListForm() 
-                : _buildExistingLists(),
+              child: _isCreatingNewList
+                  ? _buildCreateNewListForm()
+                  : _buildExistingLists(),
             ),
           ],
         ),
@@ -87,6 +89,50 @@ class _PlaceListDrawerState extends State<PlaceListDrawer> {
               });
             },
           ),
+          const Divider(height: 32),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRatingSelector() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Rate this place:',
+            style: Theme.of(context).textTheme.titleSmall,
+          ),
+          const SizedBox(height: 8),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: List.generate(5, (index) {
+              final rating = index + 1;
+              return IconButton(
+                icon: Icon(
+                  _selectedRating >= rating ? Icons.star : Icons.star_border,
+                  color: _selectedRating >= rating ? Colors.amber : Colors.grey,
+                  size: 32,
+                ),
+                onPressed: () {
+                  setState(() {
+                    _selectedRating = rating;
+                  });
+                },
+              );
+            }),
+          ),
+          if (_selectedRating > 0)
+            TextButton(
+              onPressed: () {
+                setState(() {
+                  _selectedRating = 0;
+                });
+              },
+              child: const Text('Clear Rating'),
+            ),
           const Divider(height: 32),
         ],
       ),
@@ -157,14 +203,19 @@ class _PlaceListDrawerState extends State<PlaceListDrawer> {
 
     final description = _newListDescriptionController.text.trim();
     final listService = Provider.of<PlaceListService>(context, listen: false);
-    
-    // Create new list and add place
+
+    // Create new list and add place with rating
     final newList = await listService.createList(
-      name, 
+      name,
       description.isNotEmpty ? description : null,
     );
-    await listService.addPlaceToList(newList.id, widget.place);
-    
+
+    await listService.addPlaceToList(
+      newList.id,
+      widget.place,
+      rating: _selectedRating > 0 ? _selectedRating : null,
+    );
+
     // Reset form
     setState(() {
       _isCreatingNewList = false;
@@ -184,7 +235,7 @@ class _PlaceListDrawerState extends State<PlaceListDrawer> {
       builder: (context, listService, child) {
         final lists = listService.lists;
         final listsWithPlace = listService.getListsWithPlace(widget.place.id);
-        
+
         if (lists.isEmpty) {
           return const Center(
             child: Text('No lists yet. Create your first list!'),
@@ -197,20 +248,48 @@ class _PlaceListDrawerState extends State<PlaceListDrawer> {
             final list = lists[index];
             final isInList = listsWithPlace.any((l) => l.id == list.id);
 
+            // Find the entry if this place is in the list
+            PlaceEntry? existingEntry;
+            if (isInList) {
+              existingEntry = list.findEntryById(widget.place.id);
+            }
+
             return ListTile(
               title: Text(list.name),
-              subtitle: list.description != null 
-                ? Text(list.description!, maxLines: 1, overflow: TextOverflow.ellipsis) 
-                : null,
+              subtitle: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (list.description != null)
+                    Text(list.description!,
+                        maxLines: 1, overflow: TextOverflow.ellipsis),
+                  if (isInList && existingEntry?.rating != null)
+                    Row(
+                      children: List.generate(5, (i) {
+                        return Icon(
+                          i < (existingEntry!.rating ?? 0)
+                              ? Icons.star
+                              : Icons.star_border,
+                          color: i < (existingEntry.rating ?? 0)
+                              ? Colors.amber
+                              : Colors.grey,
+                          size: 14,
+                        );
+                      }),
+                    ),
+                ],
+              ),
+              isThreeLine: isInList &&
+                  existingEntry?.rating != null &&
+                  list.description != null,
               trailing: isInList
-                ? IconButton(
-                    icon: const Icon(Icons.check_circle, color: Colors.green),
-                    onPressed: () => _removeFromList(list),
-                  )
-                : IconButton(
-                    icon: const Icon(Icons.add_circle_outline),
-                    onPressed: () => _addToList(list),
-                  ),
+                  ? IconButton(
+                      icon: const Icon(Icons.check_circle, color: Colors.green),
+                      onPressed: () => _removeFromList(list),
+                    )
+                  : IconButton(
+                      icon: const Icon(Icons.add_circle_outline),
+                      onPressed: () => _addToList(list),
+                    ),
             );
           },
         );
@@ -220,8 +299,14 @@ class _PlaceListDrawerState extends State<PlaceListDrawer> {
 
   Future<void> _addToList(PlaceList list) async {
     final listService = Provider.of<PlaceListService>(context, listen: false);
-    await listService.addPlaceToList(list.id, widget.place);
-    
+
+    // Add place with rating
+    await listService.addPlaceToList(
+      list.id,
+      widget.place,
+      rating: _selectedRating > 0 ? _selectedRating : null,
+    );
+
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Added to "${list.name}" list')),
@@ -232,7 +317,7 @@ class _PlaceListDrawerState extends State<PlaceListDrawer> {
   Future<void> _removeFromList(PlaceList list) async {
     final listService = Provider.of<PlaceListService>(context, listen: false);
     await listService.removePlaceFromList(list.id, widget.place.id);
-    
+
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Removed from "${list.name}" list')),

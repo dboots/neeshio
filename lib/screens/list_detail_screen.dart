@@ -49,7 +49,7 @@ class _ListDetailScreenState extends State<ListDetailScreen> {
       id: _currentList.id,
       name: name,
       description: description.isNotEmpty ? description : null,
-      places: _currentList.places,
+      entries: _currentList.entries,
     );
 
     await Provider.of<PlaceListService>(context, listen: false)
@@ -93,6 +93,24 @@ class _ListDetailScreenState extends State<ListDetailScreen> {
         _currentList = updatedList;
       });
     }
+  }
+
+  Future<void> _updateRating(String placeId, int rating) async {
+    final listService = Provider.of<PlaceListService>(context, listen: false);
+
+    await listService.updatePlaceRating(_currentList.id, placeId, rating);
+
+    // Refresh the list
+    final updatedList =
+        listService.lists.firstWhere((list) => list.id == _currentList.id);
+
+    setState(() {
+      _currentList = updatedList;
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Rating updated')),
+    );
   }
 
   @override
@@ -193,19 +211,21 @@ class _ListDetailScreenState extends State<ListDetailScreen> {
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           child: Text(
-            'Places (${_currentList.places.length})',
+            'Places (${_currentList.entries.length})',
             style: Theme.of(context).textTheme.titleMedium,
           ),
         ),
         Expanded(
-          child: _currentList.places.isEmpty
+          child: _currentList.entries.isEmpty
               ? const Center(
                   child: Text('No places in this list yet'),
                 )
               : ListView.builder(
-                  itemCount: _currentList.places.length,
+                  itemCount: _currentList.entries.length,
                   itemBuilder: (context, index) {
-                    final place = _currentList.places[index];
+                    final entry = _currentList.entries[index];
+                    final place = entry.place;
+
                     return Dismissible(
                       key: Key(place.id),
                       direction: DismissDirection.endToStart,
@@ -241,12 +261,68 @@ class _ListDetailScreenState extends State<ListDetailScreen> {
                       onDismissed: (direction) {
                         _removePlaceFromList(place);
                       },
-                      child: ListTile(
-                        title: Text(place.name),
-                        subtitle: Text(place.address),
-                        trailing: IconButton(
-                          icon: const Icon(Icons.delete),
-                          onPressed: () => _removePlaceFromList(place),
+                      child: Card(
+                        margin: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 4,
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.all(8.0),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              ListTile(
+                                title: Text(
+                                  place.name,
+                                  style: const TextStyle(
+                                      fontWeight: FontWeight.bold),
+                                ),
+                                subtitle: Text(place.address),
+                                trailing: IconButton(
+                                  icon: const Icon(Icons.delete),
+                                  onPressed: () => _removePlaceFromList(place),
+                                ),
+                              ),
+                              Padding(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 16.0),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'Your Rating:',
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .bodyMedium,
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Row(
+                                      children: List.generate(5, (i) {
+                                        return InkWell(
+                                          onTap: () =>
+                                              _updateRating(place.id, i + 1),
+                                          child: Padding(
+                                            padding: const EdgeInsets.only(
+                                                right: 4.0),
+                                            child: Icon(
+                                              i < (entry.rating ?? 0)
+                                                  ? Icons.star
+                                                  : Icons.star_border,
+                                              color: i < (entry.rating ?? 0)
+                                                  ? Colors.amber
+                                                  : Colors.grey,
+                                              size: 28,
+                                            ),
+                                          ),
+                                        );
+                                      }),
+                                    ),
+                                    const SizedBox(height: 8),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                     );

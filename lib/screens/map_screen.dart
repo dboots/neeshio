@@ -580,8 +580,10 @@ class _MapScreenState extends State<MapScreen>
                 controller: _searchController,
                 decoration: const InputDecoration(
                   hintText: 'Search places on map...',
+                  hintStyle: TextStyle(color: Colors.white70),
                   border: InputBorder.none,
                 ),
+                style: const TextStyle(color: Colors.white),
                 onSubmitted: (_) => _searchPlacesOnMap(),
                 autofocus: true,
               )

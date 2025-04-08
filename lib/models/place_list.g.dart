@@ -26,11 +26,22 @@ Map<String, dynamic> _$PlaceToJson(Place instance) => <String, dynamic>{
       'phone': instance.phone,
     };
 
+PlaceEntry _$PlaceEntryFromJson(Map<String, dynamic> json) => PlaceEntry(
+      place: Place.fromJson(json['place'] as Map<String, dynamic>),
+      rating: json['rating'] as int?,
+    );
+
+Map<String, dynamic> _$PlaceEntryToJson(PlaceEntry instance) =>
+    <String, dynamic>{
+      'place': instance.place,
+      'rating': instance.rating,
+    };
+
 PlaceList _$PlaceListFromJson(Map<String, dynamic> json) => PlaceList(
       id: json['id'] as String,
       name: json['name'] as String,
-      places: (json['places'] as List<dynamic>)
-          .map((e) => Place.fromJson(e as Map<String, dynamic>))
+      entries: (json['entries'] as List<dynamic>)
+          .map((e) => PlaceEntry.fromJson(e as Map<String, dynamic>))
           .toList(),
       description: json['description'] as String?,
     );
@@ -39,5 +50,5 @@ Map<String, dynamic> _$PlaceListToJson(PlaceList instance) => <String, dynamic>{
       'id': instance.id,
       'name': instance.name,
       'description': instance.description,
-      'places': instance.places,
+      'entries': instance.entries,
     };

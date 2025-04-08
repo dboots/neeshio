@@ -73,11 +73,22 @@ class PlaceListService extends ChangeNotifier {
     await _saveLists();
   }
 
-  // Add a place to a list
-  Future<void> addPlaceToList(String listId, Place place) async {
+  Future<void> addPlaceToList(String listId, Place place, {int? rating}) async {
     final index = _lists.indexWhere((list) => list.id == listId);
     if (index != -1) {
-      final updatedList = _lists[index].addPlace(place);
+      final updatedList = _lists[index].addPlace(place, rating: rating);
+      _lists[index] = updatedList;
+      notifyListeners();
+      await _saveLists();
+    }
+  }
+
+  // Add a method to update the rating
+  Future<void> updatePlaceRating(
+      String listId, String placeId, int rating) async {
+    final index = _lists.indexWhere((list) => list.id == listId);
+    if (index != -1) {
+      final updatedList = _lists[index].updateRating(placeId, rating);
       _lists[index] = updatedList;
       notifyListeners();
       await _saveLists();

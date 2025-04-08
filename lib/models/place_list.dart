@@ -41,11 +41,33 @@ class Place {
 }
 
 @JsonSerializable()
+class PlaceEntry {
+  PlaceEntry({
+    required this.place,
+    this.rating,
+  });
+
+  factory PlaceEntry.fromJson(Map<String, dynamic> json) => _$PlaceEntryFromJson(json);
+  Map<String, dynamic> toJson() => _$PlaceEntryToJson(this);
+
+  final Place place;
+  final int? rating;
+
+  // Create a copy with a new rating
+  PlaceEntry copyWithRating(int? rating) {
+    return PlaceEntry(
+      place: place,
+      rating: rating,
+    );
+  }
+}
+
+@JsonSerializable()
 class PlaceList {
   PlaceList({
     required this.id,
     required this.name,
-    required this.places,
+    required this.entries,
     this.description,
   });
 
@@ -56,7 +78,10 @@ class PlaceList {
   final String id;
   final String name;
   final String? description;
-  final List<Place> places;
+  final List<PlaceEntry> entries;
+
+  // For backward compatibility and convenience
+  List<Place> get places => entries.map((entry) => entry.place).toList();
 
   // Create a new list
   factory PlaceList.create(String id, String name, [String? description]) {
@@ -64,34 +89,78 @@ class PlaceList {
       id: id,
       name: name,
       description: description,
-      places: [],
+      entries: [],
     );
   }
 
-  // Add a place to the list
-  PlaceList addPlace(Place place) {
+  // Add a place to the list with optional rating
+  PlaceList addPlace(Place place, {int? rating}) {
     // Check if place already exists in the list
-    if (places.any((p) => p.id == place.id)) {
+    final existingIndex = entries.indexWhere((entry) => entry.place.id == place.id);
+    
+    if (existingIndex != -1) {
+      // If it exists and the rating is different, update the rating
+      if (entries[existingIndex].rating != rating) {
+        final updatedEntries = List<PlaceEntry>.from(entries);
+        updatedEntries[existingIndex] = PlaceEntry(place: place, rating: rating);
+        
+        return PlaceList(
+          id: id,
+          name: name,
+          description: description,
+          entries: updatedEntries,
+        );
+      }
+      // If it exists with the same rating, no change needed
       return this;
     }
-
-    final updatedPlaces = List<Place>.from(places)..add(place);
+    
+    // If it doesn't exist, add it with the rating
+    final updatedEntries = List<PlaceEntry>.from(entries)
+      ..add(PlaceEntry(place: place, rating: rating));
+    
     return PlaceList(
       id: id,
       name: name,
       description: description,
-      places: updatedPlaces,
+      entries: updatedEntries,
     );
   }
 
   // Remove a place from the list
   PlaceList removePlace(String placeId) {
-    final updatedPlaces = places.where((p) => p.id != placeId).toList();
+    final updatedEntries = entries.where((entry) => entry.place.id != placeId).toList();
     return PlaceList(
       id: id,
       name: name,
       description: description,
-      places: updatedPlaces,
+      entries: updatedEntries,
     );
+  }
+
+  // Update the rating for a place in the list
+  PlaceList updateRating(String placeId, int? rating) {
+    final entryIndex = entries.indexWhere((entry) => entry.place.id == placeId);
+    
+    if (entryIndex == -1) {
+      return this; // Place not found, no change
+    }
+    
+    final updatedEntries = List<PlaceEntry>.from(entries);
+    updatedEntries[entryIndex] = entries[entryIndex].copyWithRating(rating);
+    
+    return PlaceList(
+      id: id,
+      name: name,
+      description: description,
+      entries: updatedEntries,
+    );
+  }
+
+  // Find a place entry by ID
+  PlaceEntry? findEntryById(String placeId) {
+    final index = entries.indexWhere((entry) => entry.place.id == placeId);
+    if (index == -1) return null;
+    return entries[index];
   }
 }

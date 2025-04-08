@@ -116,6 +116,14 @@ class _SavedListsScreenState extends State<SavedListsScreen>
     }
   }
 
+  String _getRatingsSummary(List<PlaceEntry> entries) {
+    final ratedEntries = entries.where((entry) => entry.rating != null).length;
+    if (ratedEntries == 0) {
+      return '';
+    }
+    return ' • $ratedEntries rated';
+  }
+
   @override
   Widget build(BuildContext context) {
     super.build(context);
@@ -209,14 +217,15 @@ class _SavedListsScreenState extends State<SavedListsScreen>
                         if (list.description != null &&
                             list.description!.isNotEmpty)
                           Padding(
-                            padding: const EdgeInsets.only(top: 4, bottom: 8),
+                            padding: const EdgeInsets.only(top: 4, bottom: 4),
                             child: Text(
                               list.description!,
                               maxLines: 2,
                               overflow: TextOverflow.ellipsis,
                             ),
                           ),
-                        Text('${list.places.length} places'),
+                        Text(
+                            '${list.entries.length} places${_getRatingsSummary(list.entries)}'),
                       ],
                     ),
                     isThreeLine: list.description != null &&
