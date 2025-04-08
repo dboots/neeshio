@@ -2,14 +2,19 @@ import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
-import 'package:geolocator/geolocator.dart'; // Add this package for location
+import 'package:geolocator/geolocator.dart';
+import 'package:custom_info_window/custom_info_window.dart';
+import 'dart:ui' as ui;
+import 'dart:async';
+import 'dart:typed_data';
 
 import '../models/locations.dart' as Locations;
 import '../models/place_list.dart';
 import '../services/place_list_service.dart';
 import '../services/place_search_service.dart' as search;
 import '../widgets/place_list_drawer.dart';
-import '../widgets/location_change_dialog.dart'; // We'll create this
+import '../widgets/location_change_dialog.dart';
+import '../widgets/custom_marker_window.dart';
 
 class MapScreen extends StatefulWidget {
   const MapScreen({Key? key}) : super(key: key);
@@ -24,11 +29,18 @@ class _MapScreenState extends State<MapScreen>
   final Set<Marker> _markers = {};
   final _uuid = const Uuid();
 
+  // Custom info window controller
+  final CustomInfoWindowController _customInfoWindowController =
+      CustomInfoWindowController();
+
   Locations.Office? _selectedOffice;
   Place? _selectedPlace;
   bool _isLoading = true;
   Locations.Locations? _locations;
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
+
+  // Map of place IDs to custom marker icons
+  final Map<String, BitmapDescriptor> _customMarkerIcons = {};
 
   // Default fallback position (Portland, OR)
   LatLng _currentPosition = const LatLng(45.521563, -122.677433);
@@ -54,7 +66,86 @@ class _MapScreenState extends State<MapScreen>
   @override
   void dispose() {
     _searchController.dispose();
+    _customInfoWindowController.dispose();
     super.dispose();
+  }
+
+  // Method to create a custom marker with a name label
+  Future<BitmapDescriptor> createCustomMarkerWithName(String name) async {
+    // Create a TextPainter to measure text dimensions
+    final TextPainter textPainter = TextPainter(
+      text: TextSpan(
+        text: name,
+        style: const TextStyle(
+          color: Colors.black,
+          fontSize: 30,
+          fontWeight: FontWeight.bold,
+          backgroundColor: Colors.white,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    );
+    textPainter.layout();
+
+    // Create a PictureRecorder and Canvas
+    final ui.PictureRecorder pictureRecorder = ui.PictureRecorder();
+    final Canvas canvas = Canvas(pictureRecorder);
+
+    // Draw the marker pin
+    const double pinSize = 40;
+    final Paint pinPaint = Paint()..color = Colors.red;
+    canvas.drawCircle(
+      const Offset(pinSize / 2, pinSize / 2),
+      pinSize / 2,
+      pinPaint,
+    );
+
+    // Draw the text background
+    final double textWidth = textPainter.width + 16;
+    final double textHeight = textPainter.height + 8;
+    final Paint bgPaint = Paint()..color = Colors.white.withOpacity(0.8);
+    final RRect bgRect = RRect.fromRectAndRadius(
+      Rect.fromLTWH(
+        pinSize + 4, // Position text to the right of the marker
+        (pinSize - textHeight) / 2,
+        textWidth,
+        textHeight,
+      ),
+      const Radius.circular(8),
+    );
+    canvas.drawRRect(bgRect, bgPaint);
+
+    // Draw outline around text
+    final Paint outlinePaint = Paint()
+      ..color = Colors.black
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1;
+    canvas.drawRRect(bgRect, outlinePaint);
+
+    // Draw the text
+    textPainter.paint(
+      canvas,
+      Offset(
+        pinSize +
+            12, // Position text to the right of the marker with some padding
+        (pinSize - textPainter.height) / 2 + 4,
+      ),
+    );
+
+    // Convert the Canvas to an image
+    final ui.Image image = await pictureRecorder.endRecording().toImage(
+          (pinSize + textWidth + 20).ceil(), // Width
+          pinSize.ceil(), // Height
+        );
+    final ByteData? byteData =
+        await image.toByteData(format: ui.ImageByteFormat.png);
+
+    if (byteData != null) {
+      final Uint8List uint8List = byteData.buffer.asUint8List();
+      return BitmapDescriptor.fromBytes(uint8List);
+    } else {
+      return BitmapDescriptor.defaultMarker;
+    }
   }
 
   // Get user's current location
@@ -161,7 +252,7 @@ class _MapScreenState extends State<MapScreen>
       _isLoading = false;
     });
 
-    _updateMarkers();
+    await _updateMarkers();
 
     // Once data is loaded and map is initialized, zoom to current location
     if (_locationDetermined && _mapController != null) {
@@ -171,24 +262,38 @@ class _MapScreenState extends State<MapScreen>
     }
   }
 
-  void _updateMarkers() {
+  Future<void> _updateMarkers() async {
     if (_locations == null) return;
+
+    // Create a map of marker icons for each office
+    for (final office in _locations!.offices) {
+      if (!_customMarkerIcons.containsKey(office.id)) {
+        final customIcon = await createCustomMarkerWithName(office.name);
+        _customMarkerIcons[office.id] = customIcon;
+      }
+    }
 
     // Create a set of markers for each office location
     final markers = _locations!.offices.map((office) {
+      final position = LatLng(office.lat, office.lng);
+      final place = Place.fromOffice(office);
+
       return Marker(
         markerId: MarkerId(office.id),
-        position: LatLng(office.lat, office.lng),
-        infoWindow: InfoWindow(
-          title: office.name,
-          snippet: office.address,
-        ),
+        position: position,
+        // Use custom icon with name if available, otherwise use default
+        icon: _customMarkerIcons[office.id] ?? BitmapDescriptor.defaultMarker,
         onTap: () {
-          // First show the info window
-          // Then call the tap handler after a small delay
-          Future.delayed(const Duration(milliseconds: 300), () {
-            _onMarkerTapped(office);
-          });
+          // Show custom info window
+          _customInfoWindowController.addInfoWindow!(
+            CustomMarkerWindow(
+              place: place,
+              onTap: () {
+                _onMarkerTapped(office);
+              },
+            ),
+            position,
+          );
         },
       );
     }).toSet();
@@ -197,12 +302,6 @@ class _MapScreenState extends State<MapScreen>
       _markers.clear();
       _markers.addAll(markers);
     });
-
-    if (_mapController != null) {
-      for (final marker in _markers) {
-        _mapController.showMarkerInfoWindow(marker.markerId);
-      }
-    }
   }
 
   void _onMarkerTapped(Locations.Office office) {
@@ -210,6 +309,9 @@ class _MapScreenState extends State<MapScreen>
       _selectedOffice = office;
       _selectedPlace = Place.fromOffice(office);
     });
+
+    // Close any open info window
+    _customInfoWindowController.hideInfoWindow!();
 
     // Explicitly open the drawer using the scaffold key
     _scaffoldKey.currentState!.openEndDrawer();
@@ -219,6 +321,9 @@ class _MapScreenState extends State<MapScreen>
     setState(() {
       _selectedPlace = place;
     });
+
+    // Close any open info window
+    _customInfoWindowController.hideInfoWindow!();
 
     // Explicitly open the drawer using the scaffold key
     _scaffoldKey.currentState!.openEndDrawer();
@@ -233,17 +338,13 @@ class _MapScreenState extends State<MapScreen>
 
   void _onMapCreated(GoogleMapController controller) {
     _mapController = controller;
+    _customInfoWindowController.googleMapController = controller;
 
     // If location is already determined, move camera to current location
     if (_locationDetermined) {
       _mapController.animateCamera(
         CameraUpdate.newLatLngZoom(_currentPosition, 14.0),
       );
-    }
-
-    // Show all marker info windows after map is created
-    for (final marker in _markers) {
-      _mapController.showMarkerInfoWindow(marker.markerId);
     }
   }
 
@@ -314,21 +415,34 @@ class _MapScreenState extends State<MapScreen>
         return;
       }
 
+      // Create custom marker icons for search results
+      for (final result in results) {
+        if (!_customMarkerIcons.containsKey(result.id)) {
+          final customIcon = await createCustomMarkerWithName(result.name);
+          _customMarkerIcons[result.id] = customIcon;
+        }
+      }
+
       // Add markers for search results
       final resultMarkers = results.map((result) {
+        final place = result.toPlace();
+        final position = LatLng(result.lat, result.lng);
         return Marker(
           markerId: MarkerId(result.id),
-          position: LatLng(result.lat, result.lng),
-          infoWindow: InfoWindow(
-            title: result.name,
-            snippet: result.address,
-          ),
+          position: position,
+          // Use custom icon with name if available, otherwise use default
+          icon: _customMarkerIcons[result.id] ?? BitmapDescriptor.defaultMarker,
           onTap: () {
-            // First show the info window
-            // Then call the tap handler after a small delay
-            Future.delayed(const Duration(milliseconds: 300), () {
-              _onCustomMarkerTapped(result.toPlace());
-            });
+            // Show custom info window
+            _customInfoWindowController.addInfoWindow!(
+              CustomMarkerWindow(
+                place: place,
+                onTap: () {
+                  _onCustomMarkerTapped(place);
+                },
+              ),
+              position,
+            );
           },
         );
       }).toSet();
@@ -374,28 +488,46 @@ class _MapScreenState extends State<MapScreen>
     );
   }
 
-  void _onMapTap(LatLng position) async {
+  Future<void> _onMapTap(LatLng position) async {
     if (!_isAddingPin) return;
+
+    // Ask user for a name for the pin
+    String? pinName = await _showPinNameDialog();
+    if (pinName == null || pinName.trim().isEmpty) {
+      pinName = 'Custom Pin';
+    }
 
     // Create a place from the tapped position
     final newPlace = Place(
       id: _uuid.v4(),
-      name: 'Custom Pin',
+      name: pinName,
       address:
           'Location at ${position.latitude.toStringAsFixed(5)}, ${position.longitude.toStringAsFixed(5)}',
       lat: position.latitude,
       lng: position.longitude,
     );
 
+    // Create custom marker icon with the pin name
+    final customIcon = await createCustomMarkerWithName(pinName);
+    _customMarkerIcons[newPlace.id] = customIcon;
+
     // Add a marker for this place
     final marker = Marker(
       markerId: MarkerId(newPlace.id),
       position: position,
-      infoWindow: InfoWindow(
-        title: newPlace.name,
-        snippet: newPlace.address,
-      ),
-      onTap: () => _onCustomMarkerTapped(newPlace),
+      icon: customIcon,
+      onTap: () {
+        // Show custom info window
+        _customInfoWindowController.addInfoWindow!(
+          CustomMarkerWindow(
+            place: newPlace,
+            onTap: () {
+              _onCustomMarkerTapped(newPlace);
+            },
+          ),
+          position,
+        );
+      },
     );
 
     setState(() {
@@ -406,6 +538,35 @@ class _MapScreenState extends State<MapScreen>
 
     // Explicitly open the drawer
     _scaffoldKey.currentState!.openEndDrawer();
+  }
+
+  Future<String?> _showPinNameDialog() async {
+    final nameController = TextEditingController();
+    return showDialog<String>(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Name this pin'),
+          content: TextField(
+            controller: nameController,
+            decoration: const InputDecoration(
+              hintText: 'Enter a name for this location',
+            ),
+            autofocus: true,
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(context, nameController.text),
+              child: const Text('Save'),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   @override
@@ -424,7 +585,7 @@ class _MapScreenState extends State<MapScreen>
                 onSubmitted: (_) => _searchPlacesOnMap(),
                 autofocus: true,
               )
-            : const Text('Maps List App'),
+            : const Text('NEESH'),
         actions: [
           IconButton(
             icon: Icon(_showSearchBar ? Icons.close : Icons.search),
@@ -459,13 +620,22 @@ class _MapScreenState extends State<MapScreen>
                 GoogleMap(
                   onMapCreated: _onMapCreated,
                   initialCameraPosition: CameraPosition(
-                    target: _currentPosition, // Use current position
+                    target: _currentPosition,
                     zoom: 14.0,
                   ),
                   markers: _markers,
                   myLocationEnabled: true,
                   myLocationButtonEnabled: true,
                   onTap: _onMapTap,
+                  onCameraMove: (position) {
+                    _customInfoWindowController.onCameraMove!();
+                  },
+                ),
+                CustomInfoWindow(
+                  controller: _customInfoWindowController,
+                  height: 120,
+                  width: 220,
+                  offset: 35,
                 ),
                 if (_showSearchBar)
                   Positioned(

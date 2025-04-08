@@ -9,10 +9,10 @@ class PlaceListDrawer extends StatefulWidget {
   final VoidCallback? onClose;
 
   const PlaceListDrawer({
-    Key? key,
+    super.key,
     required this.place,
     this.onClose,
-  }) : super(key: key);
+  });
 
   @override
   State<PlaceListDrawer> createState() => _PlaceListDrawerState();

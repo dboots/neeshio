@@ -24,9 +24,9 @@ class MyApp extends StatelessWidget {
       title: 'Places List App',
       theme: ThemeData(
         useMaterial3: true,
-        colorSchemeSeed: Colors.green[700],
+        colorSchemeSeed: const Color.fromARGB(255, 48, 4, 137),
         appBarTheme: AppBarTheme(
-          backgroundColor: Colors.green[700],
+          backgroundColor: const Color.fromARGB(255, 48, 4, 137),
           foregroundColor: Colors.white,
           elevation: 2,
         ),
