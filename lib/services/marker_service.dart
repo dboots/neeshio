@@ -9,8 +9,11 @@ import '../models/place_list.dart';
 import '../widgets/custom_marker_window.dart';
 
 class MarkerService {
-  // Map to cache custom marker icons
+  // Map to cache custom marker icons to prevent recreating them
   final Map<String, BitmapDescriptor> _customMarkerIcons = {};
+
+  // Getter to access cached marker icons
+  Map<String, BitmapDescriptor> get cachedMarkerIcons => _customMarkerIcons;
 
   // Method to create a custom marker with a name label
   Future<BitmapDescriptor> createCustomMarkerWithName(String name) async {
@@ -68,8 +71,7 @@ class MarkerService {
     textPainter.paint(
       canvas,
       Offset(
-        pinSize +
-            12, // Position text to the right of the marker with some padding
+        pinSize + 12, // Position text to the right of the marker with padding
         (pinSize - textPainter.height) / 2 + 4,
       ),
     );
@@ -90,6 +92,16 @@ class MarkerService {
     }
   }
 
+  // Get or create a custom marker icon
+  Future<BitmapDescriptor> getOrCreateCustomMarkerIcon(
+      String id, String name) async {
+    if (!_customMarkerIcons.containsKey(id)) {
+      final customIcon = await createCustomMarkerWithName(name);
+      _customMarkerIcons[id] = customIcon;
+    }
+    return _customMarkerIcons[id]!;
+  }
+
   // Convert an Office to a Marker with custom marker and info window
   Future<Marker> createMarkerFromOffice({
     required Locations.Office office,
@@ -97,26 +109,32 @@ class MarkerService {
     required CustomInfoWindowController controller,
   }) async {
     final place = Place.fromOffice(office);
-
-    // Create or get cached custom marker icon
-    if (!_customMarkerIcons.containsKey(office.id)) {
-      final customIcon = await createCustomMarkerWithName(office.name);
-      _customMarkerIcons[office.id] = customIcon;
-    }
+    final icon = await getOrCreateCustomMarkerIcon(office.id, office.name);
 
     return Marker(
       markerId: MarkerId(office.id),
       position: LatLng(office.lat, office.lng),
-      icon: _customMarkerIcons[office.id]!,
+      icon: icon,
+      consumeTapEvents: true,
       onTap: () {
-        // Show custom info window
-        controller.addInfoWindow!(
-          CustomMarkerWindow(
-            place: place,
-            onTap: () => onTap(office),
-          ),
-          LatLng(office.lat, office.lng),
-        );
+        // First close any existing info window
+        controller.hideInfoWindow!();
+
+        // Then add the new info window with a slight delay to ensure proper rendering
+        Future.delayed(const Duration(milliseconds: 50), () {
+          if (controller.googleMapController != null) {
+            controller.addInfoWindow!(
+              CustomMarkerWindow(
+                place: place,
+                onTap: () => onTap(office),
+              ),
+              LatLng(office.lat, office.lng),
+            );
+          }
+        });
+
+        // Also directly call the onTap callback to ensure the marker is always recognized as tapped
+        onTap(office);
       },
     );
   }
@@ -127,26 +145,46 @@ class MarkerService {
     required Function(Place) onTap,
     required CustomInfoWindowController controller,
   }) async {
-    // Create or get cached custom marker icon
-    if (!_customMarkerIcons.containsKey(place.id)) {
-      final customIcon = await createCustomMarkerWithName(place.name);
-      _customMarkerIcons[place.id] = customIcon;
-    }
+    final icon = await getOrCreateCustomMarkerIcon(place.id, place.name);
 
     return Marker(
       markerId: MarkerId(place.id),
       position: LatLng(place.lat, place.lng),
-      icon: _customMarkerIcons[place.id]!,
+      icon: icon,
+      consumeTapEvents: true,
       onTap: () {
-        // Show custom info window
-        controller.addInfoWindow!(
-          CustomMarkerWindow(
-            place: place,
-            onTap: () => onTap(place),
-          ),
-          LatLng(place.lat, place.lng),
-        );
+        // First close any existing info window
+        controller.hideInfoWindow!();
+
+        // Then add the new info window with a slight delay to ensure proper rendering
+        Future.delayed(const Duration(milliseconds: 50), () {
+          if (controller.googleMapController != null) {
+            controller.addInfoWindow!(
+              CustomMarkerWindow(
+                place: place,
+                onTap: () => onTap(place),
+              ),
+              LatLng(place.lat, place.lng),
+            );
+          }
+        });
+
+        // Also directly call the onTap callback to ensure the marker is always recognized as tapped
+        onTap(place);
       },
+    );
+  }
+
+  // Create a basic clickable marker (fallback for troubleshooting)
+  Marker createBasicMarker({
+    required String id,
+    required LatLng position,
+    required VoidCallback onTap,
+  }) {
+    return Marker(
+      markerId: MarkerId(id),
+      position: position,
+      onTap: onTap,
     );
   }
 
@@ -159,12 +197,22 @@ class MarkerService {
     final markers = <Marker>{};
 
     for (final office in offices) {
-      final marker = await createMarkerFromOffice(
-        office: office,
-        onTap: onTap,
-        controller: controller,
-      );
-      markers.add(marker);
+      try {
+        final marker = await createMarkerFromOffice(
+          office: office,
+          onTap: onTap,
+          controller: controller,
+        );
+        markers.add(marker);
+      } catch (e) {
+        // Fallback to basic marker if custom marker creation fails
+        print('Error creating custom marker for office ${office.name}: $e');
+        markers.add(createBasicMarker(
+          id: office.id,
+          position: LatLng(office.lat, office.lng),
+          onTap: () => onTap(office),
+        ));
+      }
     }
 
     return markers;
@@ -179,14 +227,37 @@ class MarkerService {
     final markers = <Marker>{};
 
     for (final place in places) {
-      final marker = await createMarkerFromPlace(
-        place: place,
-        onTap: onTap,
-        controller: controller,
-      );
-      markers.add(marker);
+      try {
+        final marker = await createMarkerFromPlace(
+          place: place,
+          onTap: onTap,
+          controller: controller,
+        );
+        markers.add(marker);
+      } catch (e) {
+        // Fallback to basic marker if custom marker creation fails
+        print('Error creating custom marker for place ${place.name}: $e');
+        markers.add(createBasicMarker(
+          id: place.id,
+          position: LatLng(place.lat, place.lng),
+          onTap: () => onTap(place),
+        ));
+      }
     }
 
     return markers;
+  }
+
+  // Create a marker from a place search result
+  Future<Marker> createMarkerFromSearchResult({
+    required Place place,
+    required Function(Place) onTap,
+    required CustomInfoWindowController controller,
+  }) async {
+    return createMarkerFromPlace(
+      place: place,
+      onTap: onTap,
+      controller: controller,
+    );
   }
 }

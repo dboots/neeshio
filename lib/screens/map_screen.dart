@@ -4,17 +4,15 @@ import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:custom_info_window/custom_info_window.dart';
-import 'dart:ui' as ui;
 import 'dart:async';
-import 'dart:typed_data';
 
 import '../models/locations.dart' as Locations;
 import '../models/place_list.dart';
 import '../services/place_list_service.dart';
 import '../services/place_search_service.dart' as search;
+import '../services/marker_service.dart';
 import '../widgets/place_list_drawer.dart';
 import '../widgets/location_change_dialog.dart';
-import '../widgets/custom_marker_window.dart';
 
 class MapScreen extends StatefulWidget {
   const MapScreen({Key? key}) : super(key: key);
@@ -33,14 +31,13 @@ class _MapScreenState extends State<MapScreen>
   final CustomInfoWindowController _customInfoWindowController =
       CustomInfoWindowController();
 
+  // The marker service will be accessed through Provider
+
   Locations.Office? _selectedOffice;
   Place? _selectedPlace;
   bool _isLoading = true;
   Locations.Locations? _locations;
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
-
-  // Map of place IDs to custom marker icons
-  final Map<String, BitmapDescriptor> _customMarkerIcons = {};
 
   // Default fallback position (Portland, OR)
   LatLng _currentPosition = const LatLng(45.521563, -122.677433);
@@ -68,84 +65,6 @@ class _MapScreenState extends State<MapScreen>
     _searchController.dispose();
     _customInfoWindowController.dispose();
     super.dispose();
-  }
-
-  // Method to create a custom marker with a name label
-  Future<BitmapDescriptor> createCustomMarkerWithName(String name) async {
-    // Create a TextPainter to measure text dimensions
-    final TextPainter textPainter = TextPainter(
-      text: TextSpan(
-        text: name,
-        style: const TextStyle(
-          color: Colors.black,
-          fontSize: 30,
-          fontWeight: FontWeight.bold,
-          backgroundColor: Colors.white,
-        ),
-      ),
-      textDirection: TextDirection.ltr,
-    );
-    textPainter.layout();
-
-    // Create a PictureRecorder and Canvas
-    final ui.PictureRecorder pictureRecorder = ui.PictureRecorder();
-    final Canvas canvas = Canvas(pictureRecorder);
-
-    // Draw the marker pin
-    const double pinSize = 40;
-    final Paint pinPaint = Paint()..color = Colors.red;
-    canvas.drawCircle(
-      const Offset(pinSize / 2, pinSize / 2),
-      pinSize / 2,
-      pinPaint,
-    );
-
-    // Draw the text background
-    final double textWidth = textPainter.width + 16;
-    final double textHeight = textPainter.height + 8;
-    final Paint bgPaint = Paint()..color = Colors.white.withOpacity(0.8);
-    final RRect bgRect = RRect.fromRectAndRadius(
-      Rect.fromLTWH(
-        pinSize + 4, // Position text to the right of the marker
-        (pinSize - textHeight) / 2,
-        textWidth,
-        textHeight,
-      ),
-      const Radius.circular(8),
-    );
-    canvas.drawRRect(bgRect, bgPaint);
-
-    // Draw outline around text
-    final Paint outlinePaint = Paint()
-      ..color = Colors.black
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1;
-    canvas.drawRRect(bgRect, outlinePaint);
-
-    // Draw the text
-    textPainter.paint(
-      canvas,
-      Offset(
-        pinSize +
-            12, // Position text to the right of the marker with some padding
-        (pinSize - textPainter.height) / 2 + 4,
-      ),
-    );
-
-    // Convert the Canvas to an image
-    final ui.Image image = await pictureRecorder.endRecording().toImage(
-          (pinSize + textWidth + 20).ceil(), // Width
-          pinSize.ceil(), // Height
-        );
-    final ByteData? byteData =
-        await image.toByteData(format: ui.ImageByteFormat.png);
-
-    if (byteData != null) {
-      final Uint8List uint8List = byteData.buffer.asUint8List();
-      return BitmapDescriptor.fromBytes(uint8List);
-    } else {
-      return BitmapDescriptor.defaultMarker;
-    }
   }
 
   // Get user's current location
@@ -265,38 +184,22 @@ class _MapScreenState extends State<MapScreen>
   Future<void> _updateMarkers() async {
     if (_locations == null) return;
 
-    // Create a map of marker icons for each office
-    for (final office in _locations!.offices) {
-      if (!_customMarkerIcons.containsKey(office.id)) {
-        final customIcon = await createCustomMarkerWithName(office.name);
-        _customMarkerIcons[office.id] = customIcon;
-      }
+    // Use the marker service to create markers from offices
+    final markerService = Provider.of<MarkerService>(context, listen: false);
+    final markers = await markerService.createMarkersFromOffices(
+      offices: _locations!.offices,
+      onTap: _onMarkerTapped,
+      controller: _customInfoWindowController,
+    );
+
+    // Debug info
+    print('Created ${markers.length} markers');
+    if (markers.isNotEmpty) {
+      final firstMarker = markers.first;
+      print('First marker ID: ${firstMarker.markerId}');
+      print('First marker position: ${firstMarker.position}');
+      print('First marker has tap handler: ${firstMarker.onTap != null}');
     }
-
-    // Create a set of markers for each office location
-    final markers = _locations!.offices.map((office) {
-      final position = LatLng(office.lat, office.lng);
-      final place = Place.fromOffice(office);
-
-      return Marker(
-        markerId: MarkerId(office.id),
-        position: position,
-        // Use custom icon with name if available, otherwise use default
-        icon: _customMarkerIcons[office.id] ?? BitmapDescriptor.defaultMarker,
-        onTap: () {
-          // Show custom info window
-          _customInfoWindowController.addInfoWindow!(
-            CustomMarkerWindow(
-              place: place,
-              onTap: () {
-                _onMarkerTapped(office);
-              },
-            ),
-            position,
-          );
-        },
-      );
-    }).toSet();
 
     setState(() {
       _markers.clear();
@@ -415,37 +318,18 @@ class _MapScreenState extends State<MapScreen>
         return;
       }
 
-      // Create custom marker icons for search results
+      // Create markers for search results using the marker service
+      final markerService = Provider.of<MarkerService>(context, listen: false);
+      final resultMarkers = <Marker>{};
       for (final result in results) {
-        if (!_customMarkerIcons.containsKey(result.id)) {
-          final customIcon = await createCustomMarkerWithName(result.name);
-          _customMarkerIcons[result.id] = customIcon;
-        }
-      }
-
-      // Add markers for search results
-      final resultMarkers = results.map((result) {
         final place = result.toPlace();
-        final position = LatLng(result.lat, result.lng);
-        return Marker(
-          markerId: MarkerId(result.id),
-          position: position,
-          // Use custom icon with name if available, otherwise use default
-          icon: _customMarkerIcons[result.id] ?? BitmapDescriptor.defaultMarker,
-          onTap: () {
-            // Show custom info window
-            _customInfoWindowController.addInfoWindow!(
-              CustomMarkerWindow(
-                place: place,
-                onTap: () {
-                  _onCustomMarkerTapped(place);
-                },
-              ),
-              position,
-            );
-          },
+        final marker = await markerService.createMarkerFromPlace(
+          place: place,
+          onTap: _onCustomMarkerTapped,
+          controller: _customInfoWindowController,
         );
-      }).toSet();
+        resultMarkers.add(marker);
+      }
 
       setState(() {
         _markers.clear();
@@ -507,27 +391,12 @@ class _MapScreenState extends State<MapScreen>
       lng: position.longitude,
     );
 
-    // Create custom marker icon with the pin name
-    final customIcon = await createCustomMarkerWithName(pinName);
-    _customMarkerIcons[newPlace.id] = customIcon;
-
-    // Add a marker for this place
-    final marker = Marker(
-      markerId: MarkerId(newPlace.id),
-      position: position,
-      icon: customIcon,
-      onTap: () {
-        // Show custom info window
-        _customInfoWindowController.addInfoWindow!(
-          CustomMarkerWindow(
-            place: newPlace,
-            onTap: () {
-              _onCustomMarkerTapped(newPlace);
-            },
-          ),
-          position,
-        );
-      },
+    // Create marker using the marker service
+    final markerService = Provider.of<MarkerService>(context, listen: false);
+    final marker = await markerService.createMarkerFromPlace(
+      place: newPlace,
+      onTap: _onCustomMarkerTapped,
+      controller: _customInfoWindowController,
     );
 
     setState(() {
@@ -628,7 +497,7 @@ class _MapScreenState extends State<MapScreen>
                   markers: _markers,
                   myLocationEnabled: true,
                   myLocationButtonEnabled: true,
-                  onTap: _onMapTap,
+                  onTap: _isAddingPin ? _onMapTap : null,
                   onCameraMove: (position) {
                     _customInfoWindowController.onCameraMove!();
                   },

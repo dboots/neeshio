@@ -3,12 +3,15 @@ import 'package:provider/provider.dart';
 
 import 'screens/home_screen.dart';
 import 'services/place_list_service.dart';
+import 'services/marker_service.dart'; // Import marker service
 
 void main() {
   runApp(
     MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => PlaceListService()),
+        // Provide MarkerService as a singleton
+        Provider(create: (_) => MarkerService()),
       ],
       child: const MyApp(),
     ),
@@ -25,8 +28,8 @@ class MyApp extends StatelessWidget {
       theme: ThemeData(
         useMaterial3: true,
         colorSchemeSeed: const Color.fromARGB(255, 48, 4, 137),
-        appBarTheme: AppBarTheme(
-          backgroundColor: const Color.fromARGB(255, 48, 4, 137),
+        appBarTheme: const AppBarTheme(
+          backgroundColor: Color.fromARGB(255, 48, 4, 137),
           foregroundColor: Colors.white,
           elevation: 2,
         ),
