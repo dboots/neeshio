@@ -41,7 +41,9 @@ class _PlaceListDrawerState extends State<PlaceListDrawer> {
             _buildRatingSelector(),
             Expanded(
               child: _isCreatingNewList
-                  ? _buildCreateNewListForm()
+                  ? SingleChildScrollView(
+                      child: _buildCreateNewListForm(),
+                    )
                   : _buildExistingLists(),
             ),
           ],
