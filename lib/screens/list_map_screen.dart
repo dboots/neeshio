@@ -5,15 +5,14 @@ import 'package:provider/provider.dart';
 
 import '../models/place_list.dart';
 import '../services/marker_service.dart'; // Import marker service
-import '../widgets/custom_marker_window.dart';
 
 class ListMapScreen extends StatefulWidget {
   final PlaceList list;
 
   const ListMapScreen({
-    Key? key,
+    super.key,
     required this.list,
-  }) : super(key: key);
+  });
 
   @override
   State<ListMapScreen> createState() => _ListMapScreenState();

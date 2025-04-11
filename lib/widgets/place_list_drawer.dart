@@ -1,18 +1,22 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:uuid/uuid.dart';
 
 import '../models/place_list.dart';
+import '../models/place_rating.dart';
 import '../services/place_list_service.dart';
+import '../widgets/rating_category_form_dialog.dart';
+import '../widgets/star_rating_widget.dart';
 
 class PlaceListDrawer extends StatefulWidget {
   final Place place;
   final VoidCallback? onClose;
 
   const PlaceListDrawer({
-    Key? key,
+    super.key,
     required this.place,
     this.onClose,
-  }) : super(key: key);
+  });
 
   @override
   State<PlaceListDrawer> createState() => _PlaceListDrawerState();
@@ -22,12 +26,20 @@ class _PlaceListDrawerState extends State<PlaceListDrawer> {
   final _newListController = TextEditingController();
   final _newListDescriptionController = TextEditingController();
   bool _isCreatingNewList = false;
-  int _selectedRating = 0; // 0 means not rated
+  final Map<String, int> _selectedRatings = {}; // categoryId -> rating value
+  final _uuid = const Uuid();
+
+  // For new list creation with rating categories
+  final List<RatingCategory> _newListRatingCategories = [];
+  final _newCategoryNameController = TextEditingController();
+  final _newCategoryDescController = TextEditingController();
 
   @override
   void dispose() {
     _newListController.dispose();
     _newListDescriptionController.dispose();
+    _newCategoryNameController.dispose();
+    _newCategoryDescController.dispose();
     super.dispose();
   }
 
@@ -37,13 +49,9 @@ class _PlaceListDrawerState extends State<PlaceListDrawer> {
       child: SafeArea(
         child: Column(
           children: [
-            _buildHeader(),
-            _buildRatingSelector(),
             Expanded(
               child: _isCreatingNewList
-                  ? SingleChildScrollView(
-                      child: _buildCreateNewListForm(),
-                    )
+                  ? _buildCreateNewListForm()
                   : _buildExistingLists(),
             ),
           ],
@@ -52,7 +60,7 @@ class _PlaceListDrawerState extends State<PlaceListDrawer> {
     );
   }
 
-  Widget _buildHeader() {
+  Widget _buildHeader(PlaceList? list) {
     return Container(
       padding: const EdgeInsets.all(16),
       child: Column(
@@ -62,7 +70,7 @@ class _PlaceListDrawerState extends State<PlaceListDrawer> {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
-                'Add to List',
+                list == null ? 'Add to List' : 'Add to ${list.name}',
                 style: Theme.of(context).textTheme.titleLarge,
               ),
               IconButton(
@@ -81,118 +89,224 @@ class _PlaceListDrawerState extends State<PlaceListDrawer> {
             widget.place.address,
             style: Theme.of(context).textTheme.bodyMedium,
           ),
-          const SizedBox(height: 16),
-          OutlinedButton.icon(
-            icon: const Icon(Icons.add),
-            label: const Text('Create New List'),
-            onPressed: () {
-              setState(() {
-                _isCreatingNewList = true;
-              });
-            },
-          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRatingSelector(PlaceList list, PlaceEntry? existingEntry) {
+    // Initialize ratings with existing values if place is already in list
+    if (existingEntry != null && _selectedRatings.isEmpty) {
+      for (final rating in existingEntry.ratings) {
+        _selectedRatings[rating.categoryId] = rating.value;
+      }
+    }
+
+    if (list.ratingCategories.isEmpty) {
+      return const Padding(
+        padding: EdgeInsets.all(16.0),
+        child: Text('This list has no rating categories defined.'),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          ...list.ratingCategories
+              .map((category) => _buildCategoryRating(list, category)),
+          const SizedBox(height: 8),
+          // Add a "Clear all ratings" button if there are any ratings
+          if (_selectedRatings.isNotEmpty)
+            TextButton(
+              onPressed: () {
+                setState(() {
+                  _selectedRatings.clear();
+                });
+              },
+              child: const Text('Clear All Ratings'),
+            ),
           const Divider(height: 32),
         ],
       ),
     );
   }
 
-  Widget _buildRatingSelector() {
+  Widget _buildCategoryRating(PlaceList list, RatingCategory category) {
+    final rating = _selectedRatings[category.id] ?? 0;
+
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      padding: const EdgeInsets.only(bottom: 16.0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'Rate this place:',
-            style: Theme.of(context).textTheme.titleSmall,
+          Row(
+            children: [
+              Text(
+                category.name,
+                style: Theme.of(context).textTheme.titleSmall,
+              ),
+              if (category.description != null) ...[
+                const SizedBox(width: 8),
+                Tooltip(
+                  message: category.description!,
+                  child: const Icon(Icons.info_outline, size: 16),
+                ),
+              ],
+            ],
           ),
           const SizedBox(height: 8),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-            children: List.generate(5, (index) {
-              final rating = index + 1;
-              return IconButton(
-                icon: Icon(
-                  _selectedRating >= rating ? Icons.star : Icons.star_border,
-                  color: _selectedRating >= rating ? Colors.amber : Colors.grey,
-                  size: 32,
-                ),
-                onPressed: () {
-                  setState(() {
-                    _selectedRating = rating;
-                  });
-                },
-              );
-            }),
+          StarRatingWidget(
+            rating: rating,
+            size: 32,
+            onRatingChanged: (value) {
+              setState(() {
+                if (_selectedRatings[category.id] == value) {
+                  // Tap again on the same star to clear the rating
+                  _selectedRatings.remove(category.id);
+                } else {
+                  _selectedRatings[category.id] = value;
+                }
+              });
+            },
           ),
-          if (_selectedRating > 0)
-            TextButton(
-              onPressed: () {
-                setState(() {
-                  _selectedRating = 0;
-                });
-              },
-              child: const Text('Clear Rating'),
-            ),
-          const Divider(height: 32),
         ],
       ),
     );
   }
 
   Widget _buildCreateNewListForm() {
-    return Padding(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(
-            'Create a New List',
-            style: Theme.of(context).textTheme.titleMedium,
-          ),
-          const SizedBox(height: 16),
-          TextField(
-            controller: _newListController,
-            decoration: const InputDecoration(
-              labelText: 'List Name',
-              hintText: 'e.g., Best Sourdough',
-              border: OutlineInputBorder(),
+    return SingleChildScrollView(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _buildHeader(null),
+            Text(
+              'Create a New List',
+              style: Theme.of(context).textTheme.titleMedium,
             ),
-            textCapitalization: TextCapitalization.words,
-          ),
-          const SizedBox(height: 16),
-          TextField(
-            controller: _newListDescriptionController,
-            decoration: const InputDecoration(
-              labelText: 'Description (Optional)',
-              hintText: 'e.g., Places with great sourdough bread',
-              border: OutlineInputBorder(),
+            const SizedBox(height: 16),
+            TextField(
+              controller: _newListController,
+              decoration: const InputDecoration(
+                labelText: 'List Name',
+                hintText: 'e.g., Best Ramen Places',
+                border: OutlineInputBorder(),
+              ),
+              textCapitalization: TextCapitalization.words,
             ),
-            maxLines: 2,
-          ),
-          const SizedBox(height: 24),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: [
-              TextButton(
-                onPressed: () {
-                  setState(() {
-                    _isCreatingNewList = false;
-                    _newListController.clear();
-                    _newListDescriptionController.clear();
-                  });
+            const SizedBox(height: 16),
+            TextField(
+              controller: _newListDescriptionController,
+              decoration: const InputDecoration(
+                labelText: 'Description (Optional)',
+                hintText: 'e.g., Places with great ramen dishes',
+                border: OutlineInputBorder(),
+              ),
+              maxLines: 2,
+            ),
+            const SizedBox(height: 24),
+
+            // Rating Categories Section
+            const Divider(),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Rating Categories',
+                  style: Theme.of(context).textTheme.titleSmall,
+                ),
+                TextButton.icon(
+                  icon: const Icon(Icons.add, size: 18),
+                  label: const Text('Add Category'),
+                  onPressed: _showAddCategoryDialog,
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+
+            // Show list of added categories
+            if (_newListRatingCategories.isEmpty)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 16.0),
+                child: Text(
+                  'Add categories to rate places on specific attributes',
+                  style: TextStyle(
+                      fontStyle: FontStyle.italic, color: Colors.grey),
+                ),
+              )
+            else
+              ListView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: _newListRatingCategories.length,
+                itemBuilder: (context, index) {
+                  final category = _newListRatingCategories[index];
+                  return ListTile(
+                    title: Text(category.name),
+                    subtitle: category.description != null
+                        ? Text(category.description!,
+                            maxLines: 1, overflow: TextOverflow.ellipsis)
+                        : null,
+                    trailing: IconButton(
+                      icon: const Icon(Icons.delete_outline),
+                      onPressed: () {
+                        setState(() {
+                          _newListRatingCategories.removeAt(index);
+                        });
+                      },
+                    ),
+                  );
                 },
-                child: const Text('Cancel'),
               ),
-              const SizedBox(width: 16),
-              ElevatedButton(
-                onPressed: () => _createNewList(),
-                child: const Text('Create & Add Place'),
+
+            const SizedBox(height: 24),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                TextButton(
+                  onPressed: () {
+                    setState(() {
+                      _isCreatingNewList = false;
+                      _newListController.clear();
+                      _newListDescriptionController.clear();
+                      _newListRatingCategories.clear();
+                      _selectedRatings.clear();
+                    });
+                  },
+                  child: const Text('Cancel'),
+                ),
+                const SizedBox(width: 16),
+                ElevatedButton(
+                  onPressed: () => _createNewList(),
+                  child: const Text('Create & Add Place'),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showAddCategoryDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => RatingCategoryFormDialog(
+        onSave: (name, description) {
+          setState(() {
+            _newListRatingCategories.add(
+              RatingCategory(
+                id: _uuid.v4(),
+                name: name,
+                description: description,
               ),
-            ],
-          ),
-        ],
+            );
+          });
+        },
       ),
     );
   }
@@ -206,16 +320,26 @@ class _PlaceListDrawerState extends State<PlaceListDrawer> {
     final description = _newListDescriptionController.text.trim();
     final listService = Provider.of<PlaceListService>(context, listen: false);
 
-    // Create new list and add place with rating
+    // Create new list with rating categories
     final newList = await listService.createList(
       name,
       description.isNotEmpty ? description : null,
+      _newListRatingCategories,
     );
 
+    // Convert selected ratings to RatingValue objects
+    final ratings = _selectedRatings.entries
+        .map((entry) => RatingValue(
+              categoryId: entry.key,
+              value: entry.value,
+            ))
+        .toList();
+
+    // Add place with ratings
     await listService.addPlaceToList(
       newList.id,
       widget.place,
-      rating: _selectedRating > 0 ? _selectedRating : null,
+      ratings: ratings.isNotEmpty ? ratings : null,
     );
 
     // Reset form
@@ -223,6 +347,8 @@ class _PlaceListDrawerState extends State<PlaceListDrawer> {
       _isCreatingNewList = false;
       _newListController.clear();
       _newListDescriptionController.clear();
+      _newListRatingCategories.clear();
+      _selectedRatings.clear();
     });
 
     if (context.mounted) {
@@ -239,61 +365,88 @@ class _PlaceListDrawerState extends State<PlaceListDrawer> {
         final listsWithPlace = listService.getListsWithPlace(widget.place.id);
 
         if (lists.isEmpty) {
-          return const Center(
-            child: Text('No lists yet. Create your first list!'),
+          return Column(
+            children: [
+              _buildHeader(null),
+              const Expanded(
+                child: Center(
+                  child: Text('No lists yet. Create your first list!'),
+                ),
+              ),
+            ],
           );
         }
 
-        return ListView.builder(
-          itemCount: lists.length,
-          itemBuilder: (context, index) {
-            final list = lists[index];
-            final isInList = listsWithPlace.any((l) => l.id == list.id);
+        return Column(
+          children: [
+            _buildHeader(null),
+            Expanded(
+              child: ListView.builder(
+                itemCount: lists.length,
+                itemBuilder: (context, index) {
+                  final list = lists[index];
+                  final isInList = listsWithPlace.any((l) => l.id == list.id);
 
-            // Find the entry if this place is in the list
-            PlaceEntry? existingEntry;
-            if (isInList) {
-              existingEntry = list.findEntryById(widget.place.id);
-            }
+                  // Find the entry if this place is in the list
+                  PlaceEntry? existingEntry;
+                  if (isInList) {
+                    existingEntry = list.findEntryById(widget.place.id);
+                  }
 
-            return ListTile(
-              title: Text(list.name),
-              subtitle: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (list.description != null)
-                    Text(list.description!,
-                        maxLines: 1, overflow: TextOverflow.ellipsis),
-                  if (isInList && existingEntry?.rating != null)
-                    Row(
-                      children: List.generate(5, (i) {
-                        return Icon(
-                          i < (existingEntry!.rating ?? 0)
-                              ? Icons.star
-                              : Icons.star_border,
-                          color: i < (existingEntry.rating ?? 0)
-                              ? Colors.amber
-                              : Colors.grey,
-                          size: 14,
-                        );
-                      }),
+                  return ExpansionTile(
+                    title: Text(list.name),
+                    subtitle: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (list.description != null)
+                          Text(list.description!,
+                              maxLines: 1, overflow: TextOverflow.ellipsis),
+                        if (isInList &&
+                            existingEntry != null &&
+                            existingEntry.ratings.isNotEmpty)
+                          Text(
+                            'Rated: ${existingEntry.ratings.length} categories',
+                            style: const TextStyle(
+                                fontSize: 12, fontStyle: FontStyle.italic),
+                          ),
+                      ],
                     ),
-                ],
+                    trailing: isInList
+                        ? const Icon(Icons.check_circle, color: Colors.green)
+                        : const Icon(Icons.add_circle_outline),
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                        child: Column(
+                          children: [
+                            // Show rating categories for this list
+                            if (list.ratingCategories.isNotEmpty)
+                              _buildRatingSelector(list, existingEntry),
+
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.end,
+                              children: [
+                                if (isInList)
+                                  TextButton(
+                                    onPressed: () => _removeFromList(list),
+                                    child: const Text('Remove from List'),
+                                  )
+                                else
+                                  TextButton(
+                                    onPressed: () => _addToList(list),
+                                    child: const Text('Add to List'),
+                                  ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  );
+                },
               ),
-              isThreeLine: isInList &&
-                  existingEntry?.rating != null &&
-                  list.description != null,
-              trailing: isInList
-                  ? IconButton(
-                      icon: const Icon(Icons.check_circle, color: Colors.green),
-                      onPressed: () => _removeFromList(list),
-                    )
-                  : IconButton(
-                      icon: const Icon(Icons.add_circle_outline),
-                      onPressed: () => _addToList(list),
-                    ),
-            );
-          },
+            ),
+          ],
         );
       },
     );
@@ -302,17 +455,29 @@ class _PlaceListDrawerState extends State<PlaceListDrawer> {
   Future<void> _addToList(PlaceList list) async {
     final listService = Provider.of<PlaceListService>(context, listen: false);
 
-    // Add place with rating
+    // Convert selected ratings to RatingValue objects
+    final ratings = _selectedRatings.entries
+        .map((entry) => RatingValue(
+              categoryId: entry.key,
+              value: entry.value,
+            ))
+        .toList();
+
+    // Add place with ratings
     await listService.addPlaceToList(
       list.id,
       widget.place,
-      rating: _selectedRating > 0 ? _selectedRating : null,
+      ratings: ratings.isNotEmpty ? ratings : null,
     );
 
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Added to "${list.name}" list')),
       );
+      // Clear selections for next operation
+      setState(() {
+        _selectedRatings.clear();
+      });
     }
   }
 
@@ -324,6 +489,10 @@ class _PlaceListDrawerState extends State<PlaceListDrawer> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Removed from "${list.name}" list')),
       );
+      // Clear selections for next operation
+      setState(() {
+        _selectedRatings.clear();
+      });
     }
   }
 }

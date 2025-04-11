@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:uuid/uuid.dart';
 
 import '../models/place_list.dart';
+import '../models/place_rating.dart';
 import '../services/place_list_service.dart';
 import 'list_detail_screen.dart';
 import 'list_map_screen.dart';
@@ -19,6 +21,14 @@ class _SavedListsScreenState extends State<SavedListsScreen>
   final TextEditingController _newListDescriptionController =
       TextEditingController();
 
+  // For rating categories
+  final _uuid = const Uuid();
+  final List<RatingCategory> _newListRatingCategories = [];
+  final TextEditingController _newCategoryNameController =
+      TextEditingController();
+  final TextEditingController _newCategoryDescController =
+      TextEditingController();
+
   @override
   bool get wantKeepAlive => true;
 
@@ -26,31 +36,167 @@ class _SavedListsScreenState extends State<SavedListsScreen>
   void dispose() {
     _newListController.dispose();
     _newListDescriptionController.dispose();
+    _newCategoryNameController.dispose();
+    _newCategoryDescController.dispose();
     super.dispose();
   }
 
   void _showCreateListDialog() {
+    // Reset the state
+    _newListController.clear();
+    _newListDescriptionController.clear();
+    _newListRatingCategories.clear();
+
+    showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(builder: (context, setState) {
+        return AlertDialog(
+          title: const Text('Create New List'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                TextField(
+                  controller: _newListController,
+                  decoration: const InputDecoration(
+                    labelText: 'List Name',
+                    hintText: 'e.g., Best Ramen Places',
+                  ),
+                  textCapitalization: TextCapitalization.words,
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: _newListDescriptionController,
+                  decoration: const InputDecoration(
+                    labelText: 'Description (Optional)',
+                    hintText: 'e.g., My favorite places for authentic ramen',
+                  ),
+                  maxLines: 2,
+                ),
+                const SizedBox(height: 24),
+
+                // Rating Categories Section
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text(
+                      'Rating Categories:',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    // TextButton.icon(
+                    //   icon: const Icon(Icons.add, size: 18),
+                    //   label: const Text('Add'),
+                    //   onPressed: () => _showAddCategoryDialog(setState),
+                    // ),
+                  ],
+                ),
+
+                if (_newListRatingCategories.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.only(top: 8.0),
+                    child: Text(
+                      'No categories added yet. Add categories to rate places on specific attributes.',
+                      style: TextStyle(
+                        fontStyle: FontStyle.italic,
+                        color: Colors.grey,
+                        fontSize: 12,
+                      ),
+                    ),
+                  )
+                else
+                  ListView.builder(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    itemCount: _newListRatingCategories.length,
+                    itemBuilder: (context, index) {
+                      final category = _newListRatingCategories[index];
+                      return ListTile(
+                        dense: true,
+                        contentPadding: EdgeInsets.zero,
+                        title: Text(category.name),
+                        subtitle: category.description != null
+                            ? Text(
+                                category.description!,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(fontSize: 12),
+                              )
+                            : null,
+                        trailing: IconButton(
+                          icon: const Icon(Icons.delete_outline, size: 20),
+                          onPressed: () {
+                            setState(() {
+                              _newListRatingCategories.removeAt(index);
+                            });
+                          },
+                        ),
+                      );
+                    },
+                  ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.pop(context);
+              },
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () async {
+                final name = _newListController.text.trim();
+                if (name.isEmpty) return;
+
+                final description = _newListDescriptionController.text.trim();
+
+                await Provider.of<PlaceListService>(context, listen: false)
+                    .createList(
+                  name,
+                  description.isNotEmpty ? description : null,
+                  _newListRatingCategories.isNotEmpty
+                      ? _newListRatingCategories
+                      : null,
+                );
+
+                Navigator.pop(context);
+              },
+              child: const Text('Create'),
+            ),
+          ],
+        );
+      }),
+    );
+  }
+
+  void _showAddCategoryDialog(StateSetter setState) {
+    _newCategoryNameController.clear();
+    _newCategoryDescController.clear();
+
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Create New List'),
+        title: const Text('Add Rating Category'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             TextField(
-              controller: _newListController,
+              controller: _newCategoryNameController,
               decoration: const InputDecoration(
-                labelText: 'List Name',
-                hintText: 'e.g., Best Coffee Shops',
+                labelText: 'Category Name',
+                hintText: 'e.g., Broth, Noodles, Service',
+                border: OutlineInputBorder(),
               ),
               textCapitalization: TextCapitalization.words,
             ),
             const SizedBox(height: 16),
             TextField(
-              controller: _newListDescriptionController,
+              controller: _newCategoryDescController,
               decoration: const InputDecoration(
                 labelText: 'Description (Optional)',
-                hintText: 'e.g., My favorite places for coffee',
+                hintText: 'e.g., Rate the quality of the broth',
+                border: OutlineInputBorder(),
               ),
               maxLines: 2,
             ),
@@ -58,31 +204,29 @@ class _SavedListsScreenState extends State<SavedListsScreen>
         ),
         actions: [
           TextButton(
-            onPressed: () {
-              Navigator.pop(context);
-              _newListController.clear();
-              _newListDescriptionController.clear();
-            },
+            onPressed: () => Navigator.pop(context),
             child: const Text('Cancel'),
           ),
           TextButton(
-            onPressed: () async {
-              final name = _newListController.text.trim();
+            onPressed: () {
+              final name = _newCategoryNameController.text.trim();
               if (name.isEmpty) return;
 
-              final description = _newListDescriptionController.text.trim();
+              final description = _newCategoryDescController.text.trim();
 
-              await Provider.of<PlaceListService>(context, listen: false)
-                  .createList(
-                name,
-                description.isNotEmpty ? description : null,
-              );
+              setState(() {
+                _newListRatingCategories.add(
+                  RatingCategory(
+                    id: _uuid.v4(),
+                    name: name,
+                    description: description.isNotEmpty ? description : null,
+                  ),
+                );
+              });
 
               Navigator.pop(context);
-              _newListController.clear();
-              _newListDescriptionController.clear();
             },
-            child: const Text('Create'),
+            child: const Text('Add'),
           ),
         ],
       ),
@@ -116,12 +260,23 @@ class _SavedListsScreenState extends State<SavedListsScreen>
     }
   }
 
-  String _getRatingsSummary(List<PlaceEntry> entries) {
-    final ratedEntries = entries.where((entry) => entry.rating != null).length;
-    if (ratedEntries == 0) {
-      return '';
+  String _getListSummary(PlaceList list) {
+    final placesCount = list.entries.length;
+    final ratedPlacesCount =
+        list.entries.where((entry) => entry.ratings.isNotEmpty).length;
+    final categoriesCount = list.ratingCategories.length;
+
+    final buffer = StringBuffer('$placesCount places');
+
+    if (categoriesCount > 0) {
+      buffer.write(' • $categoriesCount categories');
     }
-    return ' • $ratedEntries rated';
+
+    if (ratedPlacesCount > 0) {
+      buffer.write(' • $ratedPlacesCount rated');
+    }
+
+    return buffer.toString();
   }
 
   @override
@@ -224,8 +379,29 @@ class _SavedListsScreenState extends State<SavedListsScreen>
                               overflow: TextOverflow.ellipsis,
                             ),
                           ),
-                        Text(
-                            '${list.entries.length} places${_getRatingsSummary(list.entries)}'),
+                        Text(_getListSummary(list)),
+
+                        // Show category chips if there are any
+                        if (list.ratingCategories.isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 4),
+                            child: Wrap(
+                              spacing: 4,
+                              runSpacing: 0,
+                              children: list.ratingCategories.map((category) {
+                                return Chip(
+                                  label: Text(
+                                    category.name,
+                                    style: const TextStyle(fontSize: 10),
+                                  ),
+                                  visualDensity: VisualDensity.compact,
+                                  materialTapTargetSize:
+                                      MaterialTapTargetSize.shrinkWrap,
+                                  padding: EdgeInsets.zero,
+                                );
+                              }).toList(),
+                            ),
+                          ),
                       ],
                     ),
                     isThreeLine: list.description != null &&

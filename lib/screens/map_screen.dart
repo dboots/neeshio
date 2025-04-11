@@ -142,7 +142,7 @@ class _MapScreenState extends State<MapScreen>
       });
 
       // If map is already initialized, move to current location
-      if (_isLoading == false && _mapController != null) {
+      if (_isLoading == false) {
         _mapController.animateCamera(
           CameraUpdate.newLatLngZoom(_currentPosition, 14.0),
         );

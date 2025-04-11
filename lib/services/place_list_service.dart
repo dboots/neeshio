@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 import '../models/place_list.dart';
+import '../models/place_rating.dart';
 
 class PlaceListService extends ChangeNotifier {
   List<PlaceList> _lists = [];
@@ -48,8 +49,14 @@ class PlaceListService extends ChangeNotifier {
   }
 
   // Create a new list
-  Future<PlaceList> createList(String name, [String? description]) async {
-    final newList = PlaceList.create(_uuid.v4(), name, description);
+  Future<PlaceList> createList(String name,
+      [String? description, List<RatingCategory>? ratingCategories]) async {
+    final newList = PlaceList.create(
+      _uuid.v4(),
+      name,
+      description,
+      ratingCategories,
+    );
     _lists.add(newList);
     notifyListeners();
     await _saveLists();
@@ -73,22 +80,63 @@ class PlaceListService extends ChangeNotifier {
     await _saveLists();
   }
 
-  Future<void> addPlaceToList(String listId, Place place, {int? rating}) async {
+  // Add a rating category to a list
+  Future<void> addRatingCategory(String listId, RatingCategory category) async {
     final index = _lists.indexWhere((list) => list.id == listId);
     if (index != -1) {
-      final updatedList = _lists[index].addPlace(place, rating: rating);
+      final updatedList = _lists[index].addRatingCategory(category);
       _lists[index] = updatedList;
       notifyListeners();
       await _saveLists();
     }
   }
 
-  // Add a method to update the rating
-  Future<void> updatePlaceRating(
-      String listId, String placeId, int rating) async {
+  // Remove a rating category from a list
+  Future<void> removeRatingCategory(String listId, String categoryId) async {
     final index = _lists.indexWhere((list) => list.id == listId);
     if (index != -1) {
-      final updatedList = _lists[index].updateRating(placeId, rating);
+      final updatedList = _lists[index].removeRatingCategory(categoryId);
+      _lists[index] = updatedList;
+      notifyListeners();
+      await _saveLists();
+    }
+  }
+
+  // Add a place to a list
+  Future<void> addPlaceToList(String listId, Place place,
+      {List<RatingValue>? ratings, String? notes}) async {
+    final index = _lists.indexWhere((list) => list.id == listId);
+    if (index != -1) {
+      final updatedList = _lists[index].addPlace(
+        place,
+        ratings: ratings,
+        notes: notes,
+      );
+      _lists[index] = updatedList;
+      notifyListeners();
+      await _saveLists();
+    }
+  }
+
+  // Update the rating for a category of a place in a list
+  Future<void> updatePlaceRating(
+      String listId, String placeId, String categoryId, int rating) async {
+    final index = _lists.indexWhere((list) => list.id == listId);
+    if (index != -1) {
+      final updatedList =
+          _lists[index].updateRating(placeId, categoryId, rating);
+      _lists[index] = updatedList;
+      notifyListeners();
+      await _saveLists();
+    }
+  }
+
+  // Update the notes for a place in a list
+  Future<void> updatePlaceNotes(
+      String listId, String placeId, String notes) async {
+    final index = _lists.indexWhere((list) => list.id == listId);
+    if (index != -1) {
+      final updatedList = _lists[index].updateNotes(placeId, notes);
       _lists[index] = updatedList;
       notifyListeners();
       await _saveLists();
@@ -109,7 +157,7 @@ class PlaceListService extends ChangeNotifier {
   // Get lists that contain a place
   List<PlaceList> getListsWithPlace(String placeId) {
     return _lists
-        .where((list) => list.places.any((place) => place.id == placeId))
+        .where((list) => list.entries.any((entry) => entry.place.id == placeId))
         .toList();
   }
 }

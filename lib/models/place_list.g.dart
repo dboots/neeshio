@@ -28,13 +28,18 @@ Map<String, dynamic> _$PlaceToJson(Place instance) => <String, dynamic>{
 
 PlaceEntry _$PlaceEntryFromJson(Map<String, dynamic> json) => PlaceEntry(
       place: Place.fromJson(json['place'] as Map<String, dynamic>),
-      rating: json['rating'] as int?,
+      ratings: (json['ratings'] as List<dynamic>?)
+              ?.map((e) => RatingValue.fromJson(e as Map<String, dynamic>))
+              .toList() ??
+          [],
+      notes: json['notes'] as String?,
     );
 
 Map<String, dynamic> _$PlaceEntryToJson(PlaceEntry instance) =>
     <String, dynamic>{
       'place': instance.place,
-      'rating': instance.rating,
+      'ratings': instance.ratings,
+      'notes': instance.notes,
     };
 
 PlaceList _$PlaceListFromJson(Map<String, dynamic> json) => PlaceList(
@@ -44,6 +49,10 @@ PlaceList _$PlaceListFromJson(Map<String, dynamic> json) => PlaceList(
           .map((e) => PlaceEntry.fromJson(e as Map<String, dynamic>))
           .toList(),
       description: json['description'] as String?,
+      ratingCategories: (json['ratingCategories'] as List<dynamic>?)
+              ?.map((e) => RatingCategory.fromJson(e as Map<String, dynamic>))
+              .toList() ??
+          [],
     );
 
 Map<String, dynamic> _$PlaceListToJson(PlaceList instance) => <String, dynamic>{
@@ -51,4 +60,5 @@ Map<String, dynamic> _$PlaceListToJson(PlaceList instance) => <String, dynamic>{
       'name': instance.name,
       'description': instance.description,
       'entries': instance.entries,
+      'ratingCategories': instance.ratingCategories,
     };
