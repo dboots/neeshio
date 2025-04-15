@@ -9,7 +9,7 @@ import 'list_detail_screen.dart';
 import 'list_map_screen.dart';
 
 class SavedListsScreen extends StatefulWidget {
-  const SavedListsScreen({Key? key}) : super(key: key);
+  const SavedListsScreen({super.key});
 
   @override
   State<SavedListsScreen> createState() => _SavedListsScreenState();

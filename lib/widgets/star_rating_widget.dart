@@ -11,7 +11,7 @@ class StarRatingWidget extends StatelessWidget {
   final EdgeInsets padding;
 
   const StarRatingWidget({
-    Key? key,
+    super.key,
     required this.rating,
     this.maxRating = 5,
     this.size = 24,
@@ -20,7 +20,7 @@ class StarRatingWidget extends StatelessWidget {
     this.onRatingChanged,
     this.alignment = MainAxisAlignment.start,
     this.padding = EdgeInsets.zero,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -59,7 +59,7 @@ class StarRatingDisplay extends StatelessWidget {
   final TextStyle? textStyle;
 
   const StarRatingDisplay({
-    Key? key,
+    super.key,
     required this.rating,
     this.maxRating = 5,
     this.size = 16,
@@ -67,7 +67,7 @@ class StarRatingDisplay extends StatelessWidget {
     this.showValue = true,
     this.alignment = MainAxisAlignment.start,
     this.textStyle,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {

@@ -6,9 +6,9 @@ class LocationChangeDialog extends StatefulWidget {
   final Function(LatLng, String) onLocationSelected;
 
   const LocationChangeDialog({
-    Key? key,
+    super.key,
     required this.onLocationSelected,
-  }) : super(key: key);
+  });
 
   @override
   State<LocationChangeDialog> createState() => _LocationChangeDialogState();

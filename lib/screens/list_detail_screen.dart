@@ -14,9 +14,9 @@ class ListDetailScreen extends StatefulWidget {
   final PlaceList list;
 
   const ListDetailScreen({
-    Key? key,
+    super.key,
     required this.list,
-  }) : super(key: key);
+  });
 
   @override
   State<ListDetailScreen> createState() => _ListDetailScreenState();
@@ -609,7 +609,7 @@ class _ListDetailScreenState extends State<ListDetailScreen> {
                                             ],
                                           ),
                                         );
-                                      }).toList(),
+                                      }),
 
                                       // Show average rating if there are actual ratings
                                       if (entry.ratings.isNotEmpty) ...[

@@ -6,16 +6,15 @@ import 'package:geolocator/geolocator.dart';
 import 'package:custom_info_window/custom_info_window.dart';
 import 'dart:async';
 
-import '../models/locations.dart' as Locations;
+import '../models/locations.dart' as locations;
 import '../models/place_list.dart';
-import '../services/place_list_service.dart';
 import '../services/place_search_service.dart' as search;
 import '../services/marker_service.dart';
 import '../widgets/place_list_drawer.dart';
 import '../widgets/location_change_dialog.dart';
 
 class MapScreen extends StatefulWidget {
-  const MapScreen({Key? key}) : super(key: key);
+  const MapScreen({super.key});
 
   @override
   State<MapScreen> createState() => _MapScreenState();
@@ -33,10 +32,9 @@ class _MapScreenState extends State<MapScreen>
 
   // The marker service will be accessed through Provider
 
-  Locations.Office? _selectedOffice;
   Place? _selectedPlace;
   bool _isLoading = true;
-  Locations.Locations? _locations;
+  locations.Locations? _locations;
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
 
   // Default fallback position (Portland, OR)
@@ -164,17 +162,17 @@ class _MapScreenState extends State<MapScreen>
 
   Future<void> _loadData() async {
     // Load Google office locations
-    final locations = await Locations.getGoogleOffices();
+    final offices = await locations.getGoogleOffices();
 
     setState(() {
-      _locations = locations;
+      _locations = offices;
       _isLoading = false;
     });
 
     await _updateMarkers();
 
     // Once data is loaded and map is initialized, zoom to current location
-    if (_locationDetermined && _mapController != null) {
+    if (_locationDetermined) {
       _mapController.animateCamera(
         CameraUpdate.newLatLngZoom(_currentPosition, 14.0),
       );
@@ -207,9 +205,8 @@ class _MapScreenState extends State<MapScreen>
     });
   }
 
-  void _onMarkerTapped(Locations.Office office) {
+  void _onMarkerTapped(locations.Office office) {
     setState(() {
-      _selectedOffice = office;
       _selectedPlace = Place.fromOffice(office);
     });
 
@@ -234,7 +231,6 @@ class _MapScreenState extends State<MapScreen>
 
   void _handleDrawerClose() {
     setState(() {
-      _selectedOffice = null;
       _selectedPlace = null;
     });
   }

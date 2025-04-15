@@ -8,12 +8,12 @@ class RatingCategoryFormDialog extends StatefulWidget {
   final String saveButtonText;
 
   const RatingCategoryFormDialog({
-    Key? key,
+    super.key,
     this.existingCategory,
     required this.onSave,
     this.title = 'Add Rating Category',
     this.saveButtonText = 'Add',
-  }) : super(key: key);
+  });
 
   @override
   State<RatingCategoryFormDialog> createState() =>

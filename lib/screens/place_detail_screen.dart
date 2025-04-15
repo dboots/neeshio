@@ -12,10 +12,10 @@ class PlaceDetailScreen extends StatefulWidget {
   final Place place;
 
   const PlaceDetailScreen({
-    Key? key,
+    super.key,
     required this.list,
     required this.place,
-  }) : super(key: key);
+  });
 
   @override
   State<PlaceDetailScreen> createState() => _PlaceDetailScreenState();
