@@ -6,6 +6,7 @@ import '../models/place_list.dart';
 import '../models/place_rating.dart';
 import '../services/place_list_service.dart';
 import 'list_map_screen.dart';
+import 'map_screen.dart'; // Import map_screen.dart
 import 'place_detail_screen.dart';
 import '../widgets/rating_category_form_dialog.dart';
 import '../widgets/star_rating_widget.dart';
@@ -182,6 +183,16 @@ class _ListDetailScreenState extends State<ListDetailScreen> {
     );
   }
 
+  // Navigate to the map screen to add a place to the list
+  void _navigateToMapToAddPlace() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => MapScreen(selectedListId: _currentList.id),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -231,6 +242,13 @@ class _ListDetailScreenState extends State<ListDetailScreen> {
           : _isEditingCategories
               ? _buildEditCategories()
               : _buildListDetails(),
+      floatingActionButton: !_isEditing && !_isEditingCategories
+          ? FloatingActionButton(
+              onPressed: _navigateToMapToAddPlace,
+              tooltip: 'Add Place to List',
+              child: const Icon(Icons.add_location_alt),
+            )
+          : null,
     );
   }
 
@@ -444,8 +462,19 @@ class _ListDetailScreenState extends State<ListDetailScreen> {
           ),
         Expanded(
           child: _currentList.entries.isEmpty
-              ? const Center(
-                  child: Text('No places in this list yet'),
+              ? Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Text('No places in this list yet'),
+                      const SizedBox(height: 16),
+                      ElevatedButton.icon(
+                        onPressed: _navigateToMapToAddPlace,
+                        icon: const Icon(Icons.add_location_alt),
+                        label: const Text('Add Places from Map'),
+                      ),
+                    ],
+                  ),
                 )
               : ListView.builder(
                   itemCount: _currentList.entries.length,
