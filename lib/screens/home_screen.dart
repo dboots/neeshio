@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../services/place_list_service.dart';
 import 'map_screen.dart';
 import 'saved_lists_screen.dart';
+import 'discover_screen.dart'; // Import the new Discover screen
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -53,8 +54,8 @@ class _HomeScreenState extends State<HomeScreen> {
         onPageChanged: _onPageChanged,
         physics: const NeverScrollableScrollPhysics(), // Disable swiping
         children: const [
-          MapScreen(),
-          SavedListsScreen(),
+          DiscoverScreen(),
+          SavedListsScreen(), // Add the new Discover screen
         ],
       ),
       bottomNavigationBar: NavigationBar(
@@ -62,8 +63,8 @@ class _HomeScreenState extends State<HomeScreen> {
         onDestinationSelected: _onTabTapped,
         destinations: const [
           NavigationDestination(
-            icon: Icon(Icons.map),
-            label: 'Map',
+            icon: Icon(Icons.search), // Magnifying glass icon for Discover
+            label: 'Discover',
           ),
           NavigationDestination(
             icon: Icon(Icons.list),

@@ -3,7 +3,6 @@ import 'package:provider/provider.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import '../models/place_list.dart';
-import '../models/place_rating.dart';
 import '../services/place_list_service.dart';
 import '../widgets/star_rating_widget.dart';
 

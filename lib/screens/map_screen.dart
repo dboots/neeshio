@@ -14,7 +14,6 @@ import '../widgets/location_change_dialog.dart';
 import '../widgets/map_banners.dart';
 import '../widgets/map_buttons.dart';
 import '../widgets/map_dialogs.dart';
-import '../services/location_service.dart';
 import '../services/place_utils.dart';
 import '../services/map_search_service.dart';
 
@@ -65,7 +64,6 @@ class _MapScreenState extends State<MapScreen>
   }
 
   Future<void> _initializeScreen() async {
-    await _initializeLocation();
     await _loadData();
 
     if (_selectedListId != null) {
@@ -94,22 +92,6 @@ class _MapScreenState extends State<MapScreen>
     super.dispose();
   }
 
-  //
-  // Map & Location Handling
-  //
-
-  Future<void> _initializeLocation() async {
-    final position = await LocationService.getCurrentLocation(context);
-    if (position != null) {
-      setState(() {
-        _currentPosition = position;
-      });
-    }
-    setState(() {
-      _locationDetermined = true;
-    });
-  }
-
   Future<void> _loadData() async {
     final offices = await locations.getGoogleOffices();
 
@@ -121,9 +103,9 @@ class _MapScreenState extends State<MapScreen>
     await _updateMarkers();
 
     // Once data is loaded and map is initialized, zoom to current location
-    if (_locationDetermined && this.mounted) {
+    if (_locationDetermined && mounted) {
       // Use null check to avoid null reference
-      _mapController?.animateCamera(
+      _mapController.animateCamera(
         CameraUpdate.newLatLngZoom(_currentPosition, 14.0),
       );
     }
@@ -254,7 +236,7 @@ class _MapScreenState extends State<MapScreen>
           });
 
           // Null check to prevent errors
-          _mapController?.animateCamera(
+          _mapController.animateCamera(
             CameraUpdate.newLatLngZoom(
               LatLng(results.first.lat, results.first.lng),
               14.0,

@@ -21,16 +21,28 @@ class ListMapScreen extends StatefulWidget {
 class _ListMapScreenState extends State<ListMapScreen> {
   late GoogleMapController _mapController;
   Set<Marker> _markers = {};
+  final LatLng _currentPosition =
+      const LatLng(45.521563, -122.677433); // Default to Portland
+  bool _locationDetermined = false;
   final CustomInfoWindowController _customInfoWindowController =
       CustomInfoWindowController();
+  bool _isLoading = true;
 
   // The marker service will be accessed through Provider
 
   bool _markersReady = false;
 
+  Future<void> _initializeScreen() async {
+    setState(() {
+      _isLoading = false;
+    });
+  }
+
   @override
   void initState() {
     super.initState();
+    print('here');
+    _initializeScreen();
     // Markers will be created after the map is initialized
   }
 
@@ -70,6 +82,12 @@ class _ListMapScreenState extends State<ListMapScreen> {
 
     if (widget.list.places.isNotEmpty) {
       _fitMapToMarkers();
+    }
+
+    if (_locationDetermined) {
+      _mapController.animateCamera(
+        CameraUpdate.newLatLngZoom(_currentPosition, 14.0),
+      );
     }
   }
 
@@ -119,6 +137,14 @@ class _ListMapScreenState extends State<ListMapScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (_isLoading) {
+      print('loading');
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    print('loaded');
+    print(_currentPosition);
+
     return Scaffold(
       appBar: AppBar(
         title: Text('Map: ${widget.list.name}'),
@@ -127,9 +153,9 @@ class _ListMapScreenState extends State<ListMapScreen> {
         children: [
           GoogleMap(
             onMapCreated: _onMapCreated,
-            initialCameraPosition: const CameraPosition(
-              target: LatLng(0, 0), // Will be overridden by _fitMapToMarkers
-              zoom: 2,
+            initialCameraPosition: CameraPosition(
+              target: _currentPosition,
+              zoom: 14.0,
             ),
             markers: _markers,
             onCameraMove: (position) {
