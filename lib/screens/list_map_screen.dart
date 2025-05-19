@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
-import 'package:custom_info_window/custom_info_window.dart';
 import 'package:provider/provider.dart';
+import 'package:custom_info_window/custom_info_window.dart';
 
 import '../models/place_list.dart';
-import '../services/marker_service.dart'; // Import marker service
+import '../services/place_list_service.dart';
 
 class ListMapScreen extends StatefulWidget {
   final PlaceList list;
@@ -27,9 +27,6 @@ class _ListMapScreenState extends State<ListMapScreen> {
   final CustomInfoWindowController _customInfoWindowController =
       CustomInfoWindowController();
   bool _isLoading = true;
-
-  // The marker service will be accessed through Provider
-
   bool _markersReady = false;
 
   Future<void> _initializeScreen() async {
@@ -41,7 +38,6 @@ class _ListMapScreenState extends State<ListMapScreen> {
   @override
   void initState() {
     super.initState();
-    print('here');
     _initializeScreen();
     // Markers will be created after the map is initialized
   }
@@ -53,19 +49,26 @@ class _ListMapScreenState extends State<ListMapScreen> {
   }
 
   Future<void> _createMarkers() async {
-    // Use the marker service to create markers from places
-    final markerService = Provider.of<MarkerService>(context, listen: false);
-    final markers = await markerService.createMarkersFromPlaces(
-      places: widget.list.places,
-      onTap: (place) {
-        // You can add specific actions here if needed when tapped
-        // in the list context, or navigate to place details, etc.
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('${place.name} in ${widget.list.name} list')),
-        );
-      },
-      controller: _customInfoWindowController,
-    );
+    // Create basic markers from places
+    final markers = <Marker>{};
+
+    for (final place in widget.list.places) {
+      final marker = Marker(
+        markerId: MarkerId(place.id),
+        position: LatLng(place.lat, place.lng),
+        infoWindow: InfoWindow(
+          title: place.name,
+          snippet: place.address,
+        ),
+        onTap: () {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+                content: Text('${place.name} in ${widget.list.name} list')),
+          );
+        },
+      );
+      markers.add(marker);
+    }
 
     setState(() {
       _markers = markers;
@@ -77,7 +80,7 @@ class _ListMapScreenState extends State<ListMapScreen> {
     _mapController = controller;
     _customInfoWindowController.googleMapController = controller;
 
-    // Create markers with names now that the map is initialized
+    // Create markers now that the map is initialized
     await _createMarkers();
 
     if (widget.list.places.isNotEmpty) {
@@ -138,12 +141,8 @@ class _ListMapScreenState extends State<ListMapScreen> {
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
-      print('loading');
       return const Center(child: CircularProgressIndicator());
     }
-
-    print('loaded');
-    print(_currentPosition);
 
     return Scaffold(
       appBar: AppBar(

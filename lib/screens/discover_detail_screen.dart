@@ -1,10 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
-import 'package:provider/provider.dart';
 import 'package:custom_info_window/custom_info_window.dart';
+import 'package:provider/provider.dart';
 
 import '../services/discover_service.dart';
-import '../services/marker_service.dart';
 import '../services/place_list_service.dart';
 import '../widgets/discover_detail_widgets.dart';
 
@@ -42,14 +41,14 @@ class _DiscoverDetailScreenState extends State<DiscoverDetailScreen> {
 
     try {
       final listService = Provider.of<PlaceListService>(context, listen: false);
-      
+
       // Create a copy of the list with a new ID
       final savedList = await listService.createList(
         '${widget.nearbyList.list.name} (Saved)',
         widget.nearbyList.list.description,
         widget.nearbyList.list.ratingCategories,
       );
-      
+
       // Add all places to the new list
       for (final entry in widget.nearbyList.list.entries) {
         await listService.addPlaceToList(
@@ -59,16 +58,16 @@ class _DiscoverDetailScreenState extends State<DiscoverDetailScreen> {
           notes: entry.notes,
         );
       }
-      
+
       setState(() {
         _isSaving = false;
       });
-      
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('List saved to your lists!')),
         );
-        
+
         // Return to previous screen
         Navigator.pop(context);
       }
@@ -76,7 +75,7 @@ class _DiscoverDetailScreenState extends State<DiscoverDetailScreen> {
       setState(() {
         _isSaving = false;
       });
-      
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Error saving list: $e')),
@@ -92,22 +91,26 @@ class _DiscoverDetailScreenState extends State<DiscoverDetailScreen> {
   }
 
   Future<void> _createMarkers() async {
-    final markerService = Provider.of<MarkerService>(context, listen: false);
-    
-    // Create markers for all places in the list
-    final markers = await markerService.createMarkersFromPlaces(
-      places: widget.nearbyList.list.places,
-      onTap: (place) {
-        // Just show the info window, no further action needed in preview mode
-      },
-      controller: _customInfoWindowController,
-    );
-    
+    // Create basic markers for all places in the list
+    final markers = <Marker>{};
+
+    for (final place in widget.nearbyList.list.places) {
+      final marker = Marker(
+        markerId: MarkerId(place.id),
+        position: LatLng(place.lat, place.lng),
+        infoWindow: InfoWindow(
+          title: place.name,
+          snippet: place.address,
+        ),
+      );
+      markers.add(marker);
+    }
+
     setState(() {
       _markers = markers;
       _isLoading = false;
     });
-    
+
     // Fit map to show all markers
     _fitMapToMarkers();
   }
@@ -155,7 +158,7 @@ class _DiscoverDetailScreenState extends State<DiscoverDetailScreen> {
       ),
     );
   }
-  
+
   void _zoomToPlace(double lat, double lng) {
     _mapController.animateCamera(
       CameraUpdate.newLatLngZoom(
@@ -164,12 +167,12 @@ class _DiscoverDetailScreenState extends State<DiscoverDetailScreen> {
       ),
     );
   }
-  
+
   @override
   Widget build(BuildContext context) {
     final nearbyList = widget.nearbyList;
     final list = nearbyList.list;
-    
+
     return Scaffold(
       appBar: AppBar(
         title: Text(list.name),
@@ -185,58 +188,65 @@ class _DiscoverDetailScreenState extends State<DiscoverDetailScreen> {
           ),
         ],
       ),
-      body: Column(
-        children: [
-          // Map preview
-          ListMapWidget(
-            list: list,
-            onMapCreated: _onMapCreated,
-            customInfoWindowController: _customInfoWindowController,
-            markers: _markers,
-            isLoading: _isLoading,
-          ),
-          
-          // List details
-          Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // User info and rating
-                UserInfoWidget(nearbyList: nearbyList),
-                
-                const SizedBox(height: 16),
-                
-                // Description
-                if (list.description != null) ...[
-                  Text(
-                    list.description!,
-                    style: Theme.of(context).textTheme.bodyLarge,
-                  ),
-                  const SizedBox(height: 16),
-                ],
-                
-                // List stats
-                ListStatsWidget(list: list, nearbyList: nearbyList),
-                
-                
-                // Rating categories
-                if (list.ratingCategories.isNotEmpty) ...[
-                  RatingCategoriesWidget(categories: list.ratingCategories),
-                  const SizedBox(height: 16),
-                ],
-              ],
-            ),
-          ),
-          
-          // Places list
-          Expanded(
-            child: PlacesListWidget(
+      body: SingleChildScrollView(
+        child: Column(
+          children: [
+            // Map preview
+            ListMapWidget(
               list: list,
-              onPlaceSelected: (lat, lng) => _zoomToPlace(lat, lng),
+              onMapCreated: _onMapCreated,
+              customInfoWindowController: _customInfoWindowController,
+              markers: _markers,
+              isLoading: _isLoading,
             ),
-          ),
-        ],
+
+            // List details
+            Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // User info and rating
+                  UserInfoWidget(nearbyList: nearbyList),
+
+                  const SizedBox(height: 16),
+
+                  // Description
+                  if (list.description != null) ...[
+                    Text(
+                      list.description!,
+                      style: Theme.of(context).textTheme.bodyLarge,
+                    ),
+                    const SizedBox(height: 16),
+                  ],
+
+                  // List stats
+                  ListStatsWidget(list: list, nearbyList: nearbyList),
+
+                  const SizedBox(height: 16),
+
+                  // Rating categories
+                  if (list.ratingCategories.isNotEmpty) ...[
+                    RatingCategoriesWidget(categories: list.ratingCategories),
+                    const SizedBox(height: 16),
+                  ],
+                ],
+              ),
+            ),
+
+            // Places list - using a fixed height container
+            Container(
+              height: 300, // Fixed height to prevent overflow
+              child: PlacesListWidget(
+                list: list,
+                onPlaceSelected: (lat, lng) => _zoomToPlace(lat, lng),
+              ),
+            ),
+
+            // Add some bottom padding to account for the bottom app bar
+            const SizedBox(height: 80),
+          ],
+        ),
       ),
       bottomNavigationBar: BottomAppBar(
         child: SaveButtonWidget(

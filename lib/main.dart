@@ -3,17 +3,14 @@ import 'package:provider/provider.dart';
 
 import 'screens/home_screen.dart';
 import 'services/place_list_service.dart';
-import 'services/marker_service.dart';
-import 'services/discover_service.dart'; // Add DiscoverService import
+import 'services/discover_service.dart';
 
 void main() {
   runApp(
     MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => PlaceListService()),
-        // Provide MarkerService as a singleton
-        Provider(create: (_) => MarkerService()),
-        // Add DiscoverService provider
+        // Removed MarkerService provider
         Provider(create: (_) => DiscoverService()),
       ],
       child: const MyApp(),

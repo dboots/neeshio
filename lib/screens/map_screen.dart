@@ -5,7 +5,6 @@ import 'package:custom_info_window/custom_info_window.dart';
 
 import '../models/locations.dart' as locations;
 import '../models/place_list.dart';
-import '../services/marker_service.dart';
 import '../services/place_list_service.dart';
 import '../widgets/place_list_drawer.dart';
 import '../widgets/location_change_dialog.dart';
@@ -114,12 +113,21 @@ class _MapScreenState extends State<MapScreen>
   Future<void> _updateMarkers() async {
     if (_locations == null) return;
 
-    final markerService = Provider.of<MarkerService>(context, listen: false);
-    final markers = await markerService.createMarkersFromOffices(
-      offices: _locations!.offices,
-      onTap: _onMarkerTapped,
-      controller: _customInfoWindowController,
-    );
+    // Create basic markers from offices
+    final markers = <Marker>{};
+    
+    for (final office in _locations!.offices) {
+      final marker = Marker(
+        markerId: MarkerId(office.id),
+        position: LatLng(office.lat, office.lng),
+        infoWindow: InfoWindow(
+          title: office.name,
+          snippet: office.address,
+        ),
+        onTap: () => _onMarkerTapped(office),
+      );
+      markers.add(marker);
+    }
 
     setState(() {
       _markers.clear();
@@ -221,11 +229,8 @@ class _MapScreenState extends State<MapScreen>
 
       if (results.isNotEmpty) {
         // Create markers from results
-        final resultMarkers = await MapSearchService.createSearchResultMarkers(
-            context,
-            results,
-            _onCustomMarkerTapped,
-            _customInfoWindowController);
+        final resultMarkers = MapSearchService.createSearchResultMarkers(
+            results, _onCustomMarkerTapped);
 
         // Make sure widget is still mounted before updating state
         if (mounted) {
@@ -288,11 +293,14 @@ class _MapScreenState extends State<MapScreen>
     final newPlace = PlaceUtils.createPlaceFromPosition(position, pinName);
 
     // Create marker for the new place
-    final markerService = Provider.of<MarkerService>(context, listen: false);
-    final marker = await markerService.createMarkerFromPlace(
-      place: newPlace,
-      onTap: _onCustomMarkerTapped,
-      controller: _customInfoWindowController,
+    final marker = Marker(
+      markerId: MarkerId(newPlace.id),
+      position: LatLng(newPlace.lat, newPlace.lng),
+      infoWindow: InfoWindow(
+        title: newPlace.name,
+        snippet: newPlace.address,
+      ),
+      onTap: () => _onCustomMarkerTapped(newPlace),
     );
 
     if (!mounted) return;

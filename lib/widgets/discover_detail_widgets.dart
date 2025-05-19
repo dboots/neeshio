@@ -214,33 +214,106 @@ class RatingCategoriesWidget extends StatelessWidget {
 }
 
 /// Widget for displaying a place item in a list
+/// Widget for displaying a place item in a list
 class PlaceItemWidget extends StatelessWidget {
   final PlaceEntry entry;
+  final List<RatingCategory> ratingCategories;
   final VoidCallback onTap;
 
   const PlaceItemWidget({
     super.key,
     required this.entry,
+    required this.ratingCategories,
     required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    return ListTile(
-      leading: const Icon(Icons.place),
-      title: Text(entry.place.name),
-      subtitle: Text(
-        entry.place.address,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      child: Padding(
+        padding: const EdgeInsets.all(12.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Place title and basic info
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.place),
+              title: Text(
+                entry.place.name,
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
+              subtitle: Text(
+                entry.place.address,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+              trailing: entry.ratings.isNotEmpty
+                  ? Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.star, size: 16, color: Colors.amber),
+                        const SizedBox(width: 4),
+                        Text(
+                          (entry.getAverageRating() ?? 0).toStringAsFixed(1),
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: Colors.amber,
+                          ),
+                        ),
+                      ],
+                    )
+                  : null,
+              onTap: onTap,
+            ),
+
+            // Show ratings for each category if they exist
+            if (entry.ratings.isNotEmpty && ratingCategories.isNotEmpty) ...[
+              const Divider(height: 16),
+              const Text(
+                'Ratings:',
+                style: TextStyle(
+                  fontWeight: FontWeight.w500,
+                  fontSize: 14,
+                ),
+              ),
+              const SizedBox(height: 8),
+              ...ratingCategories.map((category) {
+                final rating = entry.getRating(category.id);
+                if (rating == null) return const SizedBox.shrink();
+
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 8.0),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          category.name,
+                          style: const TextStyle(fontSize: 13),
+                        ),
+                      ),
+                      StarRatingDisplay(
+                        rating: rating.toDouble(),
+                        size: 14,
+                        showValue: false,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        '$rating/5',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }).toList(),
+            ],
+          ],
+        ),
       ),
-      trailing: entry.ratings.isNotEmpty
-          ? StarRatingDisplay(
-              rating: entry.getAverageRating() ?? 0,
-              size: 16,
-            )
-          : null,
-      onTap: onTap,
     );
   }
 }
@@ -277,6 +350,7 @@ class PlacesListWidget extends StatelessWidget {
               return PlaceItemWidget(
                 entry: entry,
                 onTap: () => onPlaceSelected(entry.place.lat, entry.place.lng),
+                ratingCategories: list.ratingCategories
               );
             },
           ),
