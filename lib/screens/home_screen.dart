@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../services/place_list_service.dart';
-import 'map_screen.dart';
 import 'saved_lists_screen.dart';
 import 'discover_screen.dart';
 import 'add_places_screen.dart'; // Import the new Add Places screen
