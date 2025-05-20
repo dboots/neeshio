@@ -1,0 +1,45 @@
+graph TD
+    Auth[auth.users] --> Profiles[profiles]
+    Profiles --> PlaceLists[place_lists]
+    PlaceLists --> RatingCategories[rating_categories]
+    PlaceLists --> ListEntries[list_entries]
+    Places[places] --> ListEntries
+    ListEntries --> RatingValues[rating_values]
+    RatingCategories --> RatingValues
+    PlaceLists --> Shares[shares]
+    Profiles --> Shares
+    
+    subgraph User Management
+        Auth(auth.users<br/>id UUID PK)
+        Profiles(profiles<br/>id UUID PK<br/>name TEXT<br/>email TEXT<br/>avatar_url TEXT)
+    end
+    
+    subgraph List Management
+        PlaceLists(place_lists<br/>id UUID PK<br/>user_id UUID FK<br/>name TEXT<br/>description TEXT<br/>is_public BOOLEAN)
+        RatingCategories(rating_categories<br/>id UUID PK<br/>list_id UUID FK<br/>name TEXT<br/>description TEXT)
+    end
+    
+    subgraph Place Management
+        Places(places<br/>id UUID PK<br/>external_id TEXT<br/>name TEXT<br/>address TEXT<br/>lat FLOAT<br/>lng FLOAT<br/>image_url TEXT<br/>phone TEXT)
+        ListEntries(list_entries<br/>id UUID PK<br/>list_id UUID FK<br/>place_id UUID FK<br/>notes TEXT)
+        RatingValues(rating_values<br/>id UUID PK<br/>entry_id UUID FK<br/>category_id UUID FK<br/>value INT)
+    end
+    
+    subgraph Sharing
+        Shares(shares<br/>id UUID PK<br/>list_id UUID FK<br/>shared_by UUID FK<br/>shared_with UUID FK<br/>email TEXT)
+    end
+    
+    classDef primaryTable fill:#f9f,stroke:#333,stroke-width:2px;
+    classDef secondaryTable fill:#bbf,stroke:#333,stroke-width:1px;
+    classDef viewTable fill:#bfb,stroke:#333,stroke-width:1px,stroke-dasharray: 5 5;
+    
+    class PlaceLists,Profiles,Places primaryTable;
+    class ListEntries,RatingCategories,RatingValues,Shares secondaryTable;
+    
+    subgraph Views
+        NearbyListsView[nearby_lists_view<br/>list_id<br/>list_name<br/>user_name<br/>avg_rating]
+    end
+    
+    class NearbyListsView viewTable;
+    
+    PlaceLists --> NearbyListsView
