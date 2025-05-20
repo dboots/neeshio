@@ -37,6 +37,7 @@ dependencies:
   http: ^1.3.0
   json_annotation: ^4.9.0
   custom_info_window: ^1.0.1
+  supabase_flutter: ^2.9.0
   shared_preferences:
   uuid:
   provider:
