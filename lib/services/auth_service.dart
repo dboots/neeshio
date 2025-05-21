@@ -115,9 +115,12 @@ class AuthService extends ChangeNotifier {
         email: email,
         password: password,
       );
+
+      print(user);
       
       _user = response.user;
     } catch (e) {
+      print(e.toString());
       _error = e.toString();
     } finally {
       _isLoading = false;

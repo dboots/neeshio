@@ -87,7 +87,7 @@ class UserInfoWidget extends StatelessWidget {
         ),
         const Spacer(),
         StarRatingDisplay(
-          rating: nearbyList.userRating,
+          rating: nearbyList.averageRating,
           showValue: true,
           size: 20,
         ),

@@ -14,6 +14,7 @@ void main() async {
   const String supabaseUrl = String.fromEnvironment('SUPABASE_URL');
   const String supabaseKey = String.fromEnvironment('SUPABASE_KEY');
   // Initialize Supabase
+  print(supabaseUrl);
   await Supabase.initialize(
     url: supabaseUrl, // Replace with your Supabase URL
     anonKey: supabaseKey, // Replace with your Supabase anon key

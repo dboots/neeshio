@@ -41,7 +41,10 @@ dependencies:
   shared_preferences:
   uuid:
   provider:
-  geolocator:
+  location: ^8.0.0
+  geolocator: ^13.0.4
+  permission_handler:
+  cached_network_image:
 
 dev_dependencies:
   flutter_test:
