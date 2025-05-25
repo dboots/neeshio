@@ -454,7 +454,7 @@ class _PlaceListDrawerState extends State<PlaceListDrawer> {
 
   Future<void> _addToList(PlaceList list) async {
     final listService = Provider.of<PlaceListService>(context, listen: false);
-
+print("added to list A");
     // Convert selected ratings to RatingValue objects
     final ratings = _selectedRatings.entries
         .map((entry) => RatingValue(
@@ -462,7 +462,7 @@ class _PlaceListDrawerState extends State<PlaceListDrawer> {
               value: entry.value,
             ))
         .toList();
-
+print("added to list B");
     // Add place with ratings
     await listService.addPlaceToList(
       list.id,
@@ -470,6 +470,7 @@ class _PlaceListDrawerState extends State<PlaceListDrawer> {
       ratings: ratings.isNotEmpty ? ratings : null,
     );
 
+  
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Added to "${list.name}" list')),
