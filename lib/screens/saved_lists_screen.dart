@@ -29,8 +29,16 @@ class _SavedListsScreenState extends State<SavedListsScreen>
   final TextEditingController _newCategoryDescController =
       TextEditingController();
 
+  bool _isRefreshing = false;
+
   @override
   bool get wantKeepAlive => true;
+
+  @override
+  void initState() {
+    super.initState();
+    _refreshLists();
+  }
 
   @override
   void dispose() {
@@ -39,6 +47,22 @@ class _SavedListsScreenState extends State<SavedListsScreen>
     _newCategoryNameController.dispose();
     _newCategoryDescController.dispose();
     super.dispose();
+  }
+
+  Future<void> _refreshLists() async {
+    setState(() {
+      _isRefreshing = true;
+    });
+
+    try {
+      await Provider.of<PlaceListService>(context, listen: false).loadLists();
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isRefreshing = false;
+        });
+      }
+    }
   }
 
   void _showCreateListDialog() {
@@ -84,11 +108,11 @@ class _SavedListsScreenState extends State<SavedListsScreen>
                       'Rating Categories:',
                       style: TextStyle(fontWeight: FontWeight.bold),
                     ),
-                    // TextButton.icon(
-                    //   icon: const Icon(Icons.add, size: 18),
-                    //   label: const Text('Add'),
-                    //   onPressed: () => _showAddCategoryDialog(setState),
-                    // ),
+                    TextButton.icon(
+                      icon: const Icon(Icons.add, size: 18),
+                      label: const Text('Add'),
+                      onPressed: () => _showAddCategoryDialog(setState),
+                    ),
                   ],
                 ),
 
@@ -150,23 +174,59 @@ class _SavedListsScreenState extends State<SavedListsScreen>
                 if (name.isEmpty) return;
 
                 final description = _newListDescriptionController.text.trim();
+                final listService =
+                    Provider.of<PlaceListService>(context, listen: false);
 
-                await Provider.of<PlaceListService>(context, listen: false)
-                    .createList(
-                  name,
-                  description.isNotEmpty ? description : null,
-                  _newListRatingCategories.isNotEmpty
-                      ? _newListRatingCategories
-                      : null,
-                );
-
+                // Show loading indicator
                 Navigator.pop(context);
+                _showLoadingDialog('Creating list...');
+
+                try {
+                  await listService.createList(
+                    name,
+                    description.isNotEmpty ? description : null,
+                    _newListRatingCategories.isNotEmpty
+                        ? _newListRatingCategories
+                        : null,
+                  );
+
+                  if (context.mounted) {
+                    Navigator.pop(context); // Close loading dialog
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Created list "$name"')),
+                    );
+                  }
+                } catch (e) {
+                  if (context.mounted) {
+                    Navigator.pop(context); // Close loading dialog
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Error creating list: $e')),
+                    );
+                  }
+                }
               },
               child: const Text('Create'),
             ),
           ],
         );
       }),
+    );
+  }
+
+  void _showLoadingDialog(String message) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const CircularProgressIndicator(),
+            const SizedBox(height: 16),
+            Text(message),
+          ],
+        ),
+      ),
     );
   }
 
@@ -253,9 +313,26 @@ class _SavedListsScreenState extends State<SavedListsScreen>
     );
 
     if (confirmed == true) {
-      if (context.mounted) {
+      // Show loading indicator
+      _showLoadingDialog('Deleting list...');
+
+      try {
         await Provider.of<PlaceListService>(context, listen: false)
             .deleteList(list.id);
+
+        if (context.mounted) {
+          Navigator.pop(context); // Close loading dialog
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Deleted "${list.name}"')),
+          );
+        }
+      } catch (e) {
+        if (context.mounted) {
+          Navigator.pop(context); // Close loading dialog
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Error deleting list: $e')),
+          );
+        }
       }
     }
   }
@@ -279,9 +356,80 @@ class _SavedListsScreenState extends State<SavedListsScreen>
     return buffer.toString();
   }
 
+  Widget _buildEmptyState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Icon(
+            Icons.list_alt,
+            size: 80,
+            color: Colors.grey,
+          ),
+          const SizedBox(height: 16),
+          const Text(
+            'No saved lists yet',
+            style: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'Create your first list to start saving places',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: Colors.grey),
+          ),
+          const SizedBox(height: 32),
+          ElevatedButton.icon(
+            onPressed: _showCreateListDialog,
+            icon: const Icon(Icons.add),
+            label: const Text('Create a List'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildError(String errorMessage) {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Icon(
+            Icons.error_outline,
+            size: 80,
+            color: Colors.red,
+          ),
+          const SizedBox(height: 16),
+          const Text(
+            'Error Loading Lists',
+            style: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            errorMessage,
+            textAlign: TextAlign.center,
+            style: const TextStyle(color: Colors.red),
+          ),
+          const SizedBox(height: 32),
+          ElevatedButton.icon(
+            onPressed: _refreshLists,
+            icon: const Icon(Icons.refresh),
+            label: const Text('Try Again'),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     super.build(context);
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Your Lists'),
@@ -294,156 +442,69 @@ class _SavedListsScreenState extends State<SavedListsScreen>
       ),
       body: Consumer<PlaceListService>(
         builder: (context, listService, child) {
-          final lists = listService.lists;
-
-          if (lists.isEmpty) {
-            return Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Text('No saved lists yet'),
-                  const SizedBox(height: 16),
-                  ElevatedButton.icon(
-                    icon: const Icon(Icons.add),
-                    label: const Text('Create a List'),
-                    onPressed: _showCreateListDialog,
-                  ),
-                ],
-              ),
-            );
+          // Show loading spinner when first loading
+          if (listService.isLoading && !_isRefreshing) {
+            return const Center(child: CircularProgressIndicator());
           }
 
-          return ListView.builder(
-            itemCount: lists.length,
-            itemBuilder: (context, index) {
-              final list = lists[index];
-              return Dismissible(
-                key: Key(list.id),
-                direction: DismissDirection.endToStart,
-                background: Container(
-                  alignment: Alignment.centerRight,
-                  padding: const EdgeInsets.only(right: 20),
-                  color: Colors.red,
-                  child: const Icon(
-                    Icons.delete,
-                    color: Colors.white,
-                  ),
-                ),
-                confirmDismiss: (direction) async {
-                  return await showDialog<bool>(
-                    context: context,
-                    builder: (context) => AlertDialog(
-                      title: const Text('Delete List'),
-                      content: Text(
-                          'Are you sure you want to delete "${list.name}"?'),
-                      actions: [
-                        TextButton(
-                          onPressed: () => Navigator.pop(context, false),
-                          child: const Text('Cancel'),
-                        ),
-                        TextButton(
-                          onPressed: () => Navigator.pop(context, true),
-                          child: const Text('Delete'),
-                        ),
-                      ],
-                    ),
-                  );
-                },
-                onDismissed: (direction) {
-                  Provider.of<PlaceListService>(context, listen: false)
-                      .deleteList(list.id);
-                },
-                child: Card(
-                  margin:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  elevation: 2,
-                  child: ListTile(
-                    contentPadding:
-                        const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                    title: Text(
-                      list.name,
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.bold,
-                          ),
-                    ),
-                    subtitle: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        if (list.description != null &&
-                            list.description!.isNotEmpty)
-                          Padding(
-                            padding: const EdgeInsets.only(top: 4, bottom: 4),
-                            child: Text(
-                              list.description!,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        Text(_getListSummary(list)),
+          // Show error if there is one
+          if (listService.error != null) {
+            return _buildError(listService.error!);
+          }
 
-                        // Show category chips if there are any
-                        if (list.ratingCategories.isNotEmpty)
-                          Padding(
-                            padding: const EdgeInsets.only(top: 4),
-                            child: Wrap(
-                              spacing: 4,
-                              runSpacing: 0,
-                              children: list.ratingCategories.map((category) {
-                                return Chip(
-                                  label: Text(
-                                    category.name,
-                                    style: const TextStyle(fontSize: 10),
-                                  ),
-                                  visualDensity: VisualDensity.compact,
-                                  materialTapTargetSize:
-                                      MaterialTapTargetSize.shrinkWrap,
-                                  padding: EdgeInsets.zero,
-                                );
-                              }).toList(),
-                            ),
-                          ),
-                      ],
+          final lists = listService.lists;
+
+          // Show empty state if no lists
+          if (lists.isEmpty) {
+            return _buildEmptyState();
+          }
+
+          // Show list of lists
+          return RefreshIndicator(
+            onRefresh: _refreshLists,
+            child: ListView.builder(
+              itemCount: lists.length,
+              itemBuilder: (context, index) {
+                final list = lists[index];
+                return Dismissible(
+                  key: Key(list.id),
+                  direction: DismissDirection.endToStart,
+                  background: Container(
+                    alignment: Alignment.centerRight,
+                    padding: const EdgeInsets.only(right: 20),
+                    color: Colors.red,
+                    child: const Icon(
+                      Icons.delete,
+                      color: Colors.white,
                     ),
-                    isThreeLine: list.description != null &&
-                        list.description!.isNotEmpty,
-                    leading: CircleAvatar(
-                      backgroundColor: Theme.of(context).colorScheme.primary,
-                      child: const Icon(Icons.list, color: Colors.white),
-                    ),
-                    trailing: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        IconButton(
-                          icon: const Icon(Icons.map_outlined),
-                          tooltip: 'View on map',
-                          onPressed: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (context) => ListMapScreen(list: list),
-                              ),
-                            );
-                          },
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.delete_outline),
-                          tooltip: 'Delete list',
-                          onPressed: () => _confirmDeleteList(context, list),
-                        ),
-                      ],
-                    ),
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => ListDetailScreen(list: list),
-                        ),
-                      );
-                    },
                   ),
-                ),
-              );
-            },
+                  confirmDismiss: (direction) async {
+                    return await showDialog<bool>(
+                      context: context,
+                      builder: (context) => AlertDialog(
+                        title: const Text('Delete List'),
+                        content: Text(
+                            'Are you sure you want to delete "${list.name}"?'),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(context, false),
+                            child: const Text('Cancel'),
+                          ),
+                          TextButton(
+                            onPressed: () => Navigator.pop(context, true),
+                            child: const Text('Delete'),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                  onDismissed: (direction) {
+                    _confirmDeleteList(context, list);
+                  },
+                  child: _buildListCard(list),
+                );
+              },
+            ),
           );
         },
       ),
@@ -451,6 +512,93 @@ class _SavedListsScreenState extends State<SavedListsScreen>
         onPressed: _showCreateListDialog,
         tooltip: 'Create new list',
         child: const Icon(Icons.add),
+      ),
+    );
+  }
+
+  Widget _buildListCard(PlaceList list) {
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      elevation: 2,
+      child: ListTile(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        title: Text(
+          list.name,
+          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.bold,
+              ),
+        ),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (list.description != null && list.description!.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 4, bottom: 4),
+                child: Text(
+                  list.description!,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            Text(_getListSummary(list)),
+
+            // Show category chips if there are any
+            if (list.ratingCategories.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Wrap(
+                  spacing: 4,
+                  runSpacing: 0,
+                  children: list.ratingCategories.map((category) {
+                    return Chip(
+                      label: Text(
+                        category.name,
+                        style: const TextStyle(fontSize: 10),
+                      ),
+                      visualDensity: VisualDensity.compact,
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      padding: EdgeInsets.zero,
+                    );
+                  }).toList(),
+                ),
+              ),
+          ],
+        ),
+        isThreeLine: list.description != null && list.description!.isNotEmpty,
+        leading: CircleAvatar(
+          backgroundColor: Theme.of(context).colorScheme.primary,
+          child: const Icon(Icons.list, color: Colors.white),
+        ),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            IconButton(
+              icon: const Icon(Icons.map_outlined),
+              tooltip: 'View on map',
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => ListMapScreen(list: list),
+                  ),
+                );
+              },
+            ),
+            IconButton(
+              icon: const Icon(Icons.delete_outline),
+              tooltip: 'Delete list',
+              onPressed: () => _confirmDeleteList(context, list),
+            ),
+          ],
+        ),
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => ListDetailScreen(list: list),
+            ),
+          );
+        },
       ),
     );
   }

@@ -6,10 +6,13 @@ import '../models/place_list.dart';
 import '../models/place_rating.dart';
 import '../services/place_list_service.dart';
 import 'list_map_screen.dart';
-import 'map_screen.dart'; // Import map_screen.dart
+import 'map_screen.dart';
 import 'place_detail_screen.dart';
 import '../widgets/rating_category_form_dialog.dart';
 import '../widgets/star_rating_widget.dart';
+
+// Import the share dialog functionality
+import '../widgets/share_list_dialog.dart';
 
 class ListDetailScreen extends StatefulWidget {
   final PlaceList list;
@@ -29,6 +32,8 @@ class _ListDetailScreenState extends State<ListDetailScreen> {
   late PlaceList _currentList;
   bool _isEditing = false;
   bool _isEditingCategories = false;
+  bool _isListPublic = false; // Track list visibility
+  bool _isLoading = false;
 
   // For adding new rating categories
   final _uuid = const Uuid();
@@ -46,6 +51,7 @@ class _ListDetailScreenState extends State<ListDetailScreen> {
     _nameController = TextEditingController(text: _currentList.name);
     _descriptionController =
         TextEditingController(text: _currentList.description ?? '');
+    _fetchListVisibility();
   }
 
   @override
@@ -55,6 +61,34 @@ class _ListDetailScreenState extends State<ListDetailScreen> {
     _newCategoryNameController.dispose();
     _newCategoryDescController.dispose();
     super.dispose();
+  }
+
+  // Fetch the list's public/private status
+  Future<void> _fetchListVisibility() async {
+    try {
+      setState(() {
+        _isLoading = true;
+      });
+
+      // In a real implementation, you would fetch this from Supabase
+      // For now, we'll simulate it with a delay
+      await Future.delayed(const Duration(milliseconds: 300));
+
+      // Set a default value (in a real app, get from Supabase)
+      setState(() {
+        _isListPublic = false;
+        _isLoading = false;
+      });
+    } catch (e) {
+      setState(() {
+        _isLoading = false;
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error fetching list details: $e')),
+        );
+      }
+    }
   }
 
   Future<void> _saveChanges() async {
@@ -183,6 +217,47 @@ class _ListDetailScreenState extends State<ListDetailScreen> {
     );
   }
 
+  // Show sharing dialog
+  void _showShareDialog() {
+    context.showShareDialog(_currentList);
+  }
+
+  // Toggle list visibility (public/private)
+  Future<void> _toggleVisibility() async {
+    try {
+      setState(() {
+        _isLoading = true;
+      });
+
+      // Update visibility in Supabase
+      await Provider.of<PlaceListService>(context, listen: false)
+          .setListVisibility(_currentList.id, !_isListPublic);
+
+      setState(() {
+        _isListPublic = !_isListPublic;
+        _isLoading = false;
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content:
+                Text('List is now ${_isListPublic ? 'public' : 'private'}'),
+          ),
+        );
+      }
+    } catch (e) {
+      setState(() {
+        _isLoading = false;
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error updating visibility: $e')),
+        );
+      }
+    }
+  }
+
   // Navigate to the map screen to add a place to the list
   void _navigateToMapToAddPlace() {
     Navigator.push(
@@ -204,6 +279,18 @@ class _ListDetailScreenState extends State<ListDetailScreen> {
                 : const Text('Edit Rating Categories'),
         actions: [
           if (!_isEditing && !_isEditingCategories) ...[
+            // Share button
+            IconButton(
+              icon: const Icon(Icons.share),
+              tooltip: 'Share List',
+              onPressed: _showShareDialog,
+            ),
+            // Public/Private toggle
+            IconButton(
+              icon: Icon(_isListPublic ? Icons.public : Icons.public_off),
+              tooltip: _isListPublic ? 'Make Private' : 'Make Public',
+              onPressed: _isLoading ? null : _toggleVisibility,
+            ),
             IconButton(
               icon: const Icon(Icons.category),
               tooltip: 'Edit Rating Categories',
@@ -419,6 +506,26 @@ class _ListDetailScreenState extends State<ListDetailScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        if (_isListPublic)
+          Container(
+            color: Colors.green.withOpacity(0.1),
+            padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+            child: Row(
+              children: [
+                const Icon(Icons.public, color: Colors.green, size: 18),
+                const SizedBox(width: 8),
+                const Text(
+                  'This list is public',
+                  style: TextStyle(color: Colors.green),
+                ),
+                const Spacer(),
+                TextButton(
+                  onPressed: _toggleVisibility,
+                  child: const Text('Make Private'),
+                ),
+              ],
+            ),
+          ),
         if (_currentList.description != null)
           Padding(
             padding: const EdgeInsets.all(16),
@@ -455,7 +562,6 @@ class _ListDetailScreenState extends State<ListDetailScreen> {
                       Text(category.name, style: const TextStyle(fontSize: 12)),
                   backgroundColor:
                       Theme.of(context).colorScheme.primaryContainer,
-                  visualDensity: VisualDensity.compact,
                 );
               }).toList(),
             ),
