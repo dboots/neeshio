@@ -2,7 +2,9 @@
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:neesh/services/location_service.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:provider/provider.dart';
 
 import '../services/discover_service.dart';
 import '../utils/location_utils.dart';
@@ -52,42 +54,20 @@ class _DiscoverScreenState extends State<DiscoverScreen>
   }
 
   Future<void> _initializeScreen() async {
-    await _getCurrentLocation();
     await _loadNearbyLists();
-    setState(() => _isFirstLoad = false);
+    await _getCurrentLocation();
+    setState(() {
+      _isFirstLoad = false;
+    });
   }
 
   Future<void> _getCurrentLocation() async {
+    final locationService =
+        Provider.of<LocationService>(context, listen: false);
     setState(() => _isLoadingLocation = true);
 
     try {
-      final status = await Permission.location.request();
-
-      if (status.isGranted) {
-        final position = await Geolocator.getCurrentPosition(
-          desiredAccuracy: LocationAccuracy.high,
-          timeLimit: const Duration(seconds: 5),
-        );
-
-        setState(() {
-          _currentLocation = LatLng(position.latitude, position.longitude);
-          _isLoadingLocation = false;
-        });
-
-        _updateLocationName();
-      } else {
-        setState(() => _isLoadingLocation = false);
-
-        if (_isFirstLoad && mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content:
-                  Text('Location permission denied. Using default location.'),
-              duration: Duration(seconds: 3),
-            ),
-          );
-        }
-      }
+      setState(() => _isLoadingLocation = false);
     } catch (e) {
       setState(() => _isLoadingLocation = false);
 

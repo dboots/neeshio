@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:neesh/services/location_service.dart';
+import 'package:provider/provider.dart';
 
 import '../models/place_list.dart';
 import '../services/place_search_service.dart' as search;
@@ -34,7 +36,21 @@ class _AddPlacesScreenState extends State<AddPlacesScreen>
   @override
   void initState() {
     super.initState();
-    _loadNearbyPlaces();
+    _initializeScreen();
+  }
+
+  Future<void> _initializeScreen() async {
+    await _getCurrentLocation();
+    await _loadNearbyPlaces();
+  }
+
+  Future<void> _getCurrentLocation() async {
+    final locationService =
+        Provider.of<LocationService>(context, listen: false);
+    setState(() {
+      _currentLocation = locationService.currentLocation!;
+      _currentLocationName = locationService.currentLocationName!;
+    });
   }
 
   @override

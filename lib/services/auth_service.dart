@@ -115,8 +115,6 @@ class AuthService extends ChangeNotifier {
         email: email,
         password: password,
       );
-
-      print(user);
       
       _user = response.user;
     } catch (e) {

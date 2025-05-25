@@ -148,6 +148,7 @@ class LocationService extends ChangeNotifier {
 
       final location = LatLng(position.latitude, position.longitude);
       final locationName = await _getLocationName(location);
+      print('location found ${location} ${locationName}');
 
       _setLocation(location, locationName);
 

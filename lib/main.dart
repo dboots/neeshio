@@ -38,11 +38,13 @@ void main() async {
     throw Exception('Failed to initialize Supabase: $e');
   }
 
-  runApp(const MyApp());
+  runApp(MyApp());
 }
 
 class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+  MyApp({super.key});
+
+  LocationService locationService = LocationService();
 
   @override
   Widget build(BuildContext context) {
@@ -50,7 +52,7 @@ class MyApp extends StatelessWidget {
       providers: [
         // Location service - should be early as other services may depend on it
         ChangeNotifierProvider(
-          create: (_) => LocationService()..initialize(),
+          create: (_) => locationService..initialize()
         ),
 
         // Auth service - should be first as other services depend on it
