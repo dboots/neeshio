@@ -1,9 +1,9 @@
 import 'package:flutter/foundation.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
+import 'dart:math';
 
 /// Service to manage shared location state across the app
 class LocationService extends ChangeNotifier {
@@ -112,28 +112,47 @@ class LocationService extends ChangeNotifier {
   /// Get the user's current GPS location
   Future<void> _getCurrentLocation() async {
     try {
+      // Check if location services are enabled
+      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) {
+        if (kDebugMode) {
+          print('Location services are disabled');
+        }
+        return;
+      }
+
       // Check location permission
-      final status = await Permission.location.request();
-
-      if (status.isGranted) {
-        // Get current position
-        final position = await Geolocator.getCurrentPosition(
-          desiredAccuracy: LocationAccuracy.high,
-          timeLimit: const Duration(seconds: 10),
-        );
-
-        final location = LatLng(position.latitude, position.longitude);
-        final locationName = await _getLocationName(location);
-
-        _setLocation(location, locationName);
-
-        if (kDebugMode) {
-          print('Got current location: $locationName');
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+        if (permission == LocationPermission.denied) {
+          if (kDebugMode) {
+            print('Location permission denied');
+          }
+          return;
         }
-      } else {
+      }
+
+      if (permission == LocationPermission.deniedForever) {
         if (kDebugMode) {
-          print('Location permission denied');
+          print('Location permissions are permanently denied');
         }
+        return;
+      }
+
+      // Get current position
+      final position = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+        timeLimit: const Duration(seconds: 10),
+      );
+
+      final location = LatLng(position.latitude, position.longitude);
+      final locationName = await _getLocationName(location);
+
+      _setLocation(location, locationName);
+
+      if (kDebugMode) {
+        print('Got current location: $locationName');
       }
     } catch (e) {
       if (kDebugMode) {
@@ -147,7 +166,7 @@ class LocationService extends ChangeNotifier {
   Future<String> _getLocationName(LatLng location) async {
     // Simplified location name detection
     // In a real app, you might use reverse geocoding
-    
+
     // Check if near known locations
     if (_isNear(location, const LatLng(41.2407, -81.4412), 10)) {
       return 'Hudson, Ohio';
@@ -172,17 +191,20 @@ class LocationService extends ChangeNotifier {
   /// Check if a location is within a certain distance (km) of another location
   bool _isNear(LatLng location1, LatLng location2, double radiusKm) {
     const double earthRadius = 6371.0; // Earth's radius in kilometers
-    
-    final lat1Rad = location1.latitude * (3.14159 / 180);
-    final lat2Rad = location2.latitude * (3.14159 / 180);
-    final deltaLatRad = (location2.latitude - location1.latitude) * (3.14159 / 180);
-    final deltaLngRad = (location2.longitude - location1.longitude) * (3.14159 / 180);
 
-    final a = (deltaLatRad / 2).sin() * (deltaLatRad / 2).sin() +
-        lat1Rad.cos() * lat2Rad.cos() *
-        (deltaLngRad / 2).sin() * (deltaLngRad / 2).sin();
-    
-    final c = 2 * (a.sqrt()).atan2((1 - a).sqrt());
+    final lat1Rad = location1.latitude * (pi / 180);
+    final lat2Rad = location2.latitude * (pi / 180);
+    final deltaLatRad = (location2.latitude - location1.latitude) * (pi / 180);
+    final deltaLngRad =
+        (location2.longitude - location1.longitude) * (pi / 180);
+
+    final a = sin(deltaLatRad / 2) * sin(deltaLatRad / 2) +
+        cos(lat1Rad) *
+            cos(lat2Rad) *
+            sin(deltaLngRad / 2) *
+            sin(deltaLngRad / 2);
+
+    final c = 2 * atan2(sqrt(a), sqrt(1 - a));
     final distance = earthRadius * c;
 
     return distance <= radiusKm;
@@ -194,7 +216,7 @@ class LocationService extends ChangeNotifier {
     _currentLocationName = locationName;
     _error = null;
     notifyListeners();
-    
+
     // Save to preferences asynchronously
     _saveLocation();
   }
@@ -202,7 +224,7 @@ class LocationService extends ChangeNotifier {
   /// Update the current location manually
   void updateLocation(LatLng location, String locationName) {
     _setLocation(location, locationName);
-    
+
     if (kDebugMode) {
       print('Location updated to: $locationName');
     }
@@ -211,7 +233,7 @@ class LocationService extends ChangeNotifier {
   /// Reset to default location
   void resetToDefault() {
     _setLocation(_defaultLocation, _defaultLocationName);
-    
+
     if (kDebugMode) {
       print('Location reset to default: $_defaultLocationName');
     }
@@ -242,7 +264,7 @@ class LocationService extends ChangeNotifier {
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove(_locationKey);
       await prefs.remove(_locationNameKey);
-      
+
       if (kDebugMode) {
         print('Cleared saved location data');
       }

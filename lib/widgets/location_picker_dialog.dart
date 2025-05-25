@@ -12,12 +12,13 @@ class LocationPickerDialog extends StatelessWidget {
     required this.onLocationSelected,
   });
 
-  void _selectPresetLocation(LatLng location, String name) {
+  void _selectPresetLocation(
+      BuildContext context, LatLng location, String name) {
     onLocationSelected(location, name);
     Navigator.pop(context);
   }
 
-  void _showMapPicker() {
+  void _showMapPicker(BuildContext context) {
     Navigator.pop(context);
     Navigator.push(
       context,
@@ -29,7 +30,6 @@ class LocationPickerDialog extends StatelessWidget {
       ),
     );
   }
-}
 
   @override
   Widget build(BuildContext context) {
@@ -77,6 +77,7 @@ class LocationPickerDialog extends StatelessWidget {
               icon: Icons.location_city,
               title: 'Hudson, Ohio',
               onTap: () => _selectPresetLocation(
+                context,
                 const LatLng(41.2407, -81.4412),
                 'Hudson, Ohio',
               ),
@@ -85,6 +86,7 @@ class LocationPickerDialog extends StatelessWidget {
               icon: Icons.location_city,
               title: 'Cleveland, Ohio',
               onTap: () => _selectPresetLocation(
+                context,
                 const LatLng(41.5085, -81.6954),
                 'Cleveland, Ohio',
               ),
@@ -93,6 +95,7 @@ class LocationPickerDialog extends StatelessWidget {
               icon: Icons.location_city,
               title: 'Akron, Ohio',
               onTap: () => _selectPresetLocation(
+                context,
                 const LatLng(41.0814, -81.5191),
                 'Akron, Ohio',
               ),
@@ -100,7 +103,7 @@ class LocationPickerDialog extends StatelessWidget {
             _LocationOption(
               icon: Icons.map,
               title: 'Choose on map...',
-              onTap: _showMapPicker,
+              onTap: () => _showMapPicker(context),
             ),
           ],
         ),
@@ -192,3 +195,5 @@ class _MapLocationPickerState extends State<MapLocationPicker> {
         },
       ),
     );
+  }
+}
