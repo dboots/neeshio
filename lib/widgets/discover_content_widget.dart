@@ -10,7 +10,7 @@ class DiscoverContent extends StatelessWidget {
   final DiscoverService discoverService;
   final Map<String, List<NearbyList>> categorizedLists;
   final String selectedCategory;
-  final VoidCallback onRefresh;
+  final Future<void> Function() onRefresh; // Changed from VoidCallback
 
   const DiscoverContent({
     super.key,
@@ -30,7 +30,7 @@ class DiscoverContent extends StatelessWidget {
     if (discoverService.error != null) {
       return ErrorState(
         error: discoverService.error!,
-        onRetry: onRefresh,
+        onRetry: () => onRefresh(), // Wrap in lambda to convert Future to void
       );
     }
 
@@ -38,11 +38,11 @@ class DiscoverContent extends StatelessWidget {
 
     if (categorizedLists.isEmpty ||
         (selectedCategory != 'All' && nearbyLists.isEmpty)) {
-      return EmptyState(onRefresh: onRefresh);
+      return EmptyState(onRefresh: () => onRefresh()); // Wrap in lambda
     }
 
     return RefreshIndicator(
-      onRefresh: onRefresh,
+      onRefresh: onRefresh, // Now correctly typed
       child: selectedCategory == 'All'
           ? CategorizedListsView(categorizedLists: categorizedLists)
           : FilteredListsView(
