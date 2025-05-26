@@ -1,4 +1,4 @@
-// Enhanced DiscoverService with sort options and caching mechanisms
+// Enhanced DiscoverService with voting functionality
 
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -13,9 +13,10 @@ enum SortOption {
   rating, // Sort by highest rating first
   placeCount, // Sort by most places first
   newest, // Sort by newest lists first
+  popularity, // Sort by vote score (upvotes - downvotes)
 }
 
-/// A model class representing a nearby list
+/// A model class representing a nearby list with voting data
 class NearbyList {
   final String id;
   final String name;
@@ -28,6 +29,9 @@ class NearbyList {
   final double averageRating;
   final List<String>? categories;
   final DateTime? createdAt;
+  final int upvotes;
+  final int downvotes;
+  final int? userVote; // -1, 0, or 1 for current user's vote
 
   NearbyList({
     required this.id,
@@ -41,25 +45,31 @@ class NearbyList {
     required this.averageRating,
     this.categories,
     this.createdAt,
+    this.upvotes = 0,
+    this.downvotes = 0,
+    this.userVote,
   });
 
   factory NearbyList.fromJson(Map<String, dynamic> json) {
     return NearbyList(
-      id: json['list_id'],
-      name: json['list_name'],
-      description: json['list_description'],
-      userId: json['user_id'],
-      userName: json['user_name'],
-      distance: json['distance']?.toDouble() ?? 0.0,
-      placeCount: json['place_count'] ?? 0,
-      categoryCount: json['category_count'] ?? 0,
-      averageRating: json['avg_rating']?.toDouble() ?? 0.0,
+      id: json['list_id'] as String,
+      name: json['list_name'] as String,
+      description: json['list_description'] as String?,
+      userId: json['user_id'] as String,
+      userName: json['user_name'] as String,
+      distance: (json['distance'] as num?)?.toDouble() ?? 0.0,
+      placeCount: (json['place_count'] as num?)?.toInt() ?? 0,
+      categoryCount: (json['category_count'] as num?)?.toInt() ?? 0,
+      averageRating: (json['avg_rating'] as num?)?.toDouble() ?? 0.0,
       categories: json['categories'] != null
-          ? List<String>.from(json['categories'])
+          ? List<String>.from(json['categories'] as List)
           : null,
       createdAt: json['created_at'] != null
-          ? DateTime.parse(json['created_at'])
+          ? DateTime.parse(json['created_at'] as String)
           : null,
+      upvotes: (json['upvotes'] as num?)?.toInt() ?? 0,
+      downvotes: (json['downvotes'] as num?)?.toInt() ?? 0,
+      userVote: json['user_vote'] as int?,
     );
   }
 
@@ -76,6 +86,9 @@ class NearbyList {
       'avg_rating': averageRating,
       'categories': categories,
       'created_at': createdAt?.toIso8601String(),
+      'upvotes': upvotes,
+      'downvotes': downvotes,
+      'user_vote': userVote,
     };
   }
 
@@ -83,9 +96,42 @@ class NearbyList {
   String getFormattedDistance() {
     return LocationUtils.formatDistance(distance);
   }
+
+  /// Get vote score (upvotes - downvotes)
+  int get voteScore => upvotes - downvotes;
+
+  /// Get vote percentage (upvotes / total votes)
+  double get votePercentage {
+    final total = upvotes + downvotes;
+    return total > 0 ? (upvotes / total) * 100 : 0.0;
+  }
+
+  /// Copy with updated vote data
+  NearbyList copyWithVote({
+    required int newUpvotes,
+    required int newDownvotes,
+    required int? newUserVote,
+  }) {
+    return NearbyList(
+      id: id,
+      name: name,
+      description: description,
+      userId: userId,
+      userName: userName,
+      distance: distance,
+      placeCount: placeCount,
+      categoryCount: categoryCount,
+      averageRating: averageRating,
+      categories: categories,
+      createdAt: createdAt,
+      upvotes: newUpvotes,
+      downvotes: newDownvotes,
+      userVote: newUserVote,
+    );
+  }
 }
 
-/// Enhanced service class to handle discovery functionality with caching and sorting
+/// Enhanced service class to handle discovery functionality with voting
 class DiscoverService extends ChangeNotifier {
   final SupabaseClient _supabase;
 
@@ -140,13 +186,14 @@ class DiscoverService extends ChangeNotifier {
       notifyListeners();
 
       final response = await _supabase.rpc(
-        'get_nearby_lists',
+        'get_nearby_lists_with_votes',
         params: {
+          'category_filter': categoryFilter,
           'lat': latitude,
           'lng': longitude,
-          'radius_km': radiusKm,
           'max_results': maxResults,
-          'category_filter': categoryFilter,
+          'radius_km': radiusKm,
+          'p_user_id': _supabase.auth.currentUser?.id,
         },
       );
 
@@ -186,6 +233,68 @@ class DiscoverService extends ChangeNotifier {
     }
   }
 
+  /// Vote on a list (1 for upvote, -1 for downvote, 0 to remove vote)
+  Future<void> voteOnList(String listId, int voteValue) async {
+    try {
+      final userId = _supabase.auth.currentUser?.id;
+      if (userId == null) {
+        throw Exception('User must be authenticated to vote');
+      }
+
+      // Validate vote value
+      if (voteValue != -1 && voteValue != 0 && voteValue != 1) {
+        throw Exception('Invalid vote value. Must be -1, 0, or 1');
+      }
+
+      await _supabase.rpc('vote_on_list', params: {
+        'list_id': listId,
+        'user_id': userId,
+        'vote_value': voteValue,
+      });
+
+      // Update local cache
+      await _updateLocalVoteCache(listId, voteValue);
+
+      notifyListeners();
+    } catch (e) {
+      if (kDebugMode) {
+        print('Error voting on list: $e');
+      }
+      throw Exception('Failed to record vote: ${e.toString()}');
+    }
+  }
+
+  /// Update local vote cache after voting
+  Future<void> _updateLocalVoteCache(String listId, int voteValue) async {
+    final index = _nearbyLists.indexWhere((list) => list.id == listId);
+    if (index == -1) return;
+
+    final currentList = _nearbyLists[index];
+    int newUpvotes = currentList.upvotes;
+    int newDownvotes = currentList.downvotes;
+
+    // Remove previous vote if any
+    if (currentList.userVote == 1) {
+      newUpvotes--;
+    } else if (currentList.userVote == -1) {
+      newDownvotes--;
+    }
+
+    // Add new vote if not removing
+    if (voteValue == 1) {
+      newUpvotes++;
+    } else if (voteValue == -1) {
+      newDownvotes++;
+    }
+
+    // Update the list
+    _nearbyLists[index] = currentList.copyWithVote(
+      newUpvotes: newUpvotes,
+      newDownvotes: newDownvotes,
+      newUserVote: voteValue == 0 ? null : voteValue,
+    );
+  }
+
   /// Get nearby lists organized by category
   Future<Map<String, List<NearbyList>>> getNearbyListsByCategory({
     required double latitude,
@@ -211,9 +320,13 @@ class DiscoverService extends ChangeNotifier {
       'Other': [],
     };
 
-    // Get featured lists (top rated)
+    // Get featured lists (highest vote score and rating combined)
     final featuredLists = List<NearbyList>.from(allLists)
-      ..sort((a, b) => b.averageRating.compareTo(a.averageRating));
+      ..sort((a, b) {
+        final aScore = (a.voteScore * 0.6) + (a.averageRating * 0.4);
+        final bScore = (b.voteScore * 0.6) + (b.averageRating * 0.4);
+        return bScore.compareTo(aScore);
+      });
 
     if (featuredLists.isNotEmpty) {
       categorizedLists['Featured'] = featuredLists.take(5).toList();
@@ -291,6 +404,9 @@ class DiscoverService extends ChangeNotifier {
           if (b.createdAt == null) return -1;
           return b.createdAt!.compareTo(a.createdAt!);
         });
+        break;
+      case SortOption.popularity:
+        _nearbyLists.sort((a, b) => b.voteScore.compareTo(a.voteScore));
         break;
     }
 
@@ -396,6 +512,4 @@ class DiscoverService extends ChangeNotifier {
       }
     }
   }
-
-  // Remove the duplicate calculateDistance methods as they've been moved to LocationUtils
 }

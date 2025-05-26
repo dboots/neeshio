@@ -1,11 +1,8 @@
-import 'dart:math';
-
 import 'package:flutter/material.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart';
-import 'package:custom_info_window/custom_info_window.dart';
+import 'package:provider/provider.dart';
 
 import '../services/discover_service.dart';
-import '../utils/location_utils.dart';
+import '../services/auth_service.dart';
 import '../widgets/star_rating_widget.dart';
 
 class DiscoverDetailScreen extends StatefulWidget {
@@ -21,24 +18,15 @@ class DiscoverDetailScreen extends StatefulWidget {
 }
 
 class _DiscoverDetailScreenState extends State<DiscoverDetailScreen> {
-  late GoogleMapController _mapController;
-  final CustomInfoWindowController _customInfoWindowController =
-      CustomInfoWindowController();
-  Set<Marker> _markers = {};
   bool _isLoading = true;
-  bool _isSaving = false;
+  bool _isVoting = false;
+  late NearbyList _currentList;
 
   @override
   void initState() {
     super.initState();
+    _currentList = widget.nearbyList;
     _fetchListDetails();
-  }
-
-  @override
-  void dispose() {
-    _customInfoWindowController.dispose();
-    _mapController.dispose();
-    super.dispose();
   }
 
   // Fetch additional details if needed
@@ -49,108 +37,122 @@ class _DiscoverDetailScreenState extends State<DiscoverDetailScreen> {
     setState(() => _isLoading = false);
   }
 
-  Future<void> _saveToMyLists() async {
-    setState(() {
-      _isSaving = true;
-    });
+  Future<void> _handleVote(int voteValue) async {
+    final authService = Provider.of<AuthService>(context, listen: false);
+
+    if (!authService.isAuthenticated) {
+      _showSignInRequired();
+      return;
+    }
+
+    setState(() => _isVoting = true);
 
     try {
-      // This would typically fetch the places from the API
-      // For now, show a success message
+      final discoverService =
+          Provider.of<DiscoverService>(context, listen: false);
+
+      // Determine the actual vote value to send
+      int actualVoteValue;
+      if (_currentList.userVote == voteValue) {
+        // User is removing their vote
+        actualVoteValue = 0;
+      } else {
+        // User is voting or changing their vote
+        actualVoteValue = voteValue;
+      }
+
+      // Call the service to vote
+      await discoverService.voteOnList(_currentList.id, actualVoteValue);
+
+      // Update local state
       setState(() {
-        _isSaving = false;
+        int newUpvotes = _currentList.upvotes;
+        int newDownvotes = _currentList.downvotes;
+
+        // Remove previous vote if any
+        if (_currentList.userVote == 1) {
+          newUpvotes--;
+        } else if (_currentList.userVote == -1) {
+          newDownvotes--;
+        }
+
+        // Add new vote if not removing
+        if (actualVoteValue == 1) {
+          newUpvotes++;
+        } else if (actualVoteValue == -1) {
+          newDownvotes++;
+        }
+
+        _currentList = _currentList.copyWithVote(
+          newUpvotes: newUpvotes,
+          newDownvotes: newDownvotes,
+          newUserVote: actualVoteValue == 0 ? null : actualVoteValue,
+        );
+        _isVoting = false;
       });
+
+      // Show feedback
+      final String message = actualVoteValue == 0
+          ? 'Vote removed'
+          : actualVoteValue == 1
+              ? 'Thanks for your upvote!'
+              : 'Feedback recorded';
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('List saved to your lists!')),
+          SnackBar(
+            content: Text(message),
+            duration: const Duration(seconds: 2),
+          ),
         );
-
-        // Return to previous screen
-        Navigator.pop(context);
       }
     } catch (e) {
-      setState(() {
-        _isSaving = false;
-      });
+      setState(() => _isVoting = false);
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error saving list: $e')),
+          SnackBar(
+            content: Text('Failed to record vote: $e'),
+            backgroundColor: Colors.red,
+          ),
         );
       }
     }
   }
 
-  void _onMapCreated(GoogleMapController controller) {
-    _mapController = controller;
-    _customInfoWindowController.googleMapController = controller;
-    _createMarkers();
-  }
-
-  Future<void> _createMarkers() async {
-    // Simulate marker creation for places in the list
-    // In a real app, you would use actual place data
-    final markers = <Marker>{};
-
-    // For demo purposes, create markers for simulated places
-    for (int i = 0; i < widget.nearbyList.placeCount; i++) {
-      // Create a marker at a slightly offset location from the center
-      final offset = 0.002 * i;
-      final marker = Marker(
-        markerId: MarkerId('place_$i'),
-        position: LatLng(
-          widget.nearbyList.lat + offset * cos(i * 0.5),
-          widget.nearbyList.lng + offset * sin(i * 0.5),
-        ),
-        infoWindow: InfoWindow(
-          title: 'Place ${i + 1}',
-          snippet: 'Part of ${widget.nearbyList.name}',
-        ),
-      );
-      markers.add(marker);
-    }
-
-    setState(() {
-      _markers = markers;
-      _isLoading = false;
-    });
-
-    // Fit map to show all markers
-    _fitMapToMarkers();
-  }
-
-  void _fitMapToMarkers() {
-    if (_markers.isEmpty) return;
-
-    final List<LatLng> positions =
-        _markers.map((marker) => marker.position).toList();
-
-    // Use LocationUtils to calculate bounds with padding
-    final bounds = LocationUtils.calculateBounds(positions);
-
-    // Move camera to show all markers
-    _mapController.animateCamera(
-      CameraUpdate.newLatLngBounds(bounds, 50), // padding in pixels
-    );
-  }
-
-  void _zoomToPlace(double lat, double lng) {
-    _mapController.animateCamera(
-      CameraUpdate.newLatLngZoom(
-        LatLng(lat, lng),
-        16.0,
+  void _showSignInRequired() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Sign In Required'),
+        content: const Text('Please sign in to vote on lists.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(context);
+              // In a real app, you might navigate to login screen
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Navigate to login screen to sign in'),
+                ),
+              );
+            },
+            child: const Text('Sign In'),
+          ),
+        ],
       ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    final nearbyList = widget.nearbyList;
-
     return Scaffold(
       appBar: AppBar(
-        title: Text(nearbyList.name),
+        title: Text(_currentList.name),
         actions: [
           IconButton(
             icon: const Icon(Icons.share),
@@ -168,9 +170,6 @@ class _DiscoverDetailScreenState extends State<DiscoverDetailScreen> {
           : SingleChildScrollView(
               child: Column(
                 children: [
-                  // Map preview
-                  _buildMapSection(),
-
                   // List details
                   Padding(
                     padding: const EdgeInsets.all(16.0),
@@ -182,10 +181,15 @@ class _DiscoverDetailScreenState extends State<DiscoverDetailScreen> {
 
                         const SizedBox(height: 16),
 
+                        // Voting section
+                        _buildVotingSection(),
+
+                        const SizedBox(height: 16),
+
                         // Description
-                        if (nearbyList.description != null) ...[
+                        if (_currentList.description != null) ...[
                           Text(
-                            nearbyList.description!,
+                            _currentList.description!,
                             style: Theme.of(context).textTheme.bodyLarge,
                           ),
                           const SizedBox(height: 16),
@@ -197,8 +201,8 @@ class _DiscoverDetailScreenState extends State<DiscoverDetailScreen> {
                         const SizedBox(height: 16),
 
                         // Rating categories
-                        if (nearbyList.categories != null &&
-                            nearbyList.categories!.isNotEmpty) ...[
+                        if (_currentList.categories != null &&
+                            _currentList.categories!.isNotEmpty) ...[
                           _buildRatingCategories(),
                           const SizedBox(height: 16),
                         ],
@@ -209,57 +213,21 @@ class _DiscoverDetailScreenState extends State<DiscoverDetailScreen> {
                   // Places list
                   _buildPlacesList(),
 
-                  // Add some bottom padding to account for the bottom app bar
-                  const SizedBox(height: 80),
+                  // Add some bottom padding
+                  const SizedBox(height: 32),
                 ],
               ),
             ),
-      bottomNavigationBar: BottomAppBar(
-        child: _buildSaveButton(),
-      ),
-    );
-  }
-
-  Widget _buildMapSection() {
-    return SizedBox(
-      height: 200,
-      child: Stack(
-        children: [
-          GoogleMap(
-            onMapCreated: _onMapCreated,
-            initialCameraPosition: CameraPosition(
-              target: LatLng(widget.nearbyList.lat, widget.nearbyList.lng),
-              zoom: 14.0,
-            ),
-            markers: _markers,
-            zoomControlsEnabled: false,
-            mapToolbarEnabled: false,
-            myLocationButtonEnabled: false,
-            onCameraMove: (position) {
-              _customInfoWindowController.onCameraMove!();
-            },
-          ),
-          CustomInfoWindow(
-            controller: _customInfoWindowController,
-            height: 120,
-            width: 220,
-            offset: 35,
-          ),
-          if (_isLoading) const Center(child: CircularProgressIndicator()),
-        ],
-      ),
     );
   }
 
   Widget _buildUserInfo() {
-    final nearbyList = widget.nearbyList;
-
     return Row(
       children: [
         const Icon(Icons.person, size: 16, color: Colors.grey),
         const SizedBox(width: 8),
         Text(
-          nearbyList.userName,
+          _currentList.userName,
           style: const TextStyle(
             color: Colors.grey,
             fontWeight: FontWeight.bold,
@@ -267,7 +235,7 @@ class _DiscoverDetailScreenState extends State<DiscoverDetailScreen> {
         ),
         const Spacer(),
         StarRatingDisplay(
-          rating: nearbyList.averageRating,
+          rating: _currentList.averageRating,
           showValue: true,
           size: 20,
         ),
@@ -275,25 +243,127 @@ class _DiscoverDetailScreenState extends State<DiscoverDetailScreen> {
     );
   }
 
-  Widget _buildListStats() {
-    final nearbyList = widget.nearbyList;
+  Widget _buildVotingSection() {
+    return Card(
+      elevation: 2,
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Rate this list',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                // Upvote button
+                _buildVoteButton(
+                  icon: Icons.thumb_up,
+                  count: _currentList.upvotes,
+                  isSelected: _currentList.userVote == 1,
+                  onPressed: _isVoting ? null : () => _handleVote(1),
+                  color: Colors.green,
+                ),
+                const SizedBox(width: 16),
+                // Downvote button
+                _buildVoteButton(
+                  icon: Icons.thumb_down,
+                  count: _currentList.downvotes,
+                  isSelected: _currentList.userVote == -1,
+                  onPressed: _isVoting ? null : () => _handleVote(-1),
+                  color: Colors.red,
+                ),
+                const Spacer(),
+                // Vote ratio indicator
+                if (_currentList.upvotes + _currentList.downvotes > 0) ...[
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Text(
+                        '${_currentList.votePercentage.round()}% positive',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      Text(
+                        '${_currentList.upvotes + _currentList.downvotes} total votes',
+                        style: const TextStyle(
+                          fontSize: 10,
+                          color: Colors.grey,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ],
+            ),
+            if (_isVoting) ...[
+              const SizedBox(height: 12),
+              const LinearProgressIndicator(),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
 
+  Widget _buildVoteButton({
+    required IconData icon,
+    required int count,
+    required bool isSelected,
+    required VoidCallback? onPressed,
+    required Color color,
+  }) {
+    return ElevatedButton.icon(
+      onPressed: onPressed,
+      icon: Icon(
+        icon,
+        size: 18,
+        color: isSelected ? Colors.white : color,
+      ),
+      label: Text(
+        count.toString(),
+        style: TextStyle(
+          color: isSelected ? Colors.white : color,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+      style: ElevatedButton.styleFrom(
+        backgroundColor: isSelected ? color : Colors.grey[100],
+        foregroundColor: isSelected ? Colors.white : color,
+        elevation: isSelected ? 2 : 0,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+          side: BorderSide(
+            color: isSelected ? color : Colors.grey[300]!,
+            width: 1,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildListStats() {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
       children: [
         _buildStatCard(
           icon: Icons.place,
-          value: '${nearbyList.placeCount}',
+          value: '${_currentList.placeCount}',
           label: 'Places',
         ),
         _buildStatCard(
           icon: Icons.category,
-          value: '${nearbyList.categoryCount}',
+          value: '${_currentList.categoryCount}',
           label: 'Categories',
         ),
         _buildStatCard(
           icon: Icons.near_me,
-          value: nearbyList.getFormattedDistance(),
+          value: _currentList.getFormattedDistance(),
           label: 'Away',
         ),
       ],
@@ -334,7 +404,7 @@ class _DiscoverDetailScreenState extends State<DiscoverDetailScreen> {
   }
 
   Widget _buildRatingCategories() {
-    final categories = widget.nearbyList.categories ?? [];
+    final categories = _currentList.categories ?? [];
 
     if (categories.isEmpty) {
       return const SizedBox.shrink();
@@ -366,7 +436,7 @@ class _DiscoverDetailScreenState extends State<DiscoverDetailScreen> {
     // Generate placeholder places for demo purposes
     // In a real app, use actual place data
     final places = List.generate(
-      widget.nearbyList.placeCount,
+      _currentList.placeCount,
       (index) => _buildPlaceholderItem(index),
     );
 
@@ -396,7 +466,7 @@ class _DiscoverDetailScreenState extends State<DiscoverDetailScreen> {
     // This would be replaced with actual place data in a real app
 
     final placeName = 'Place ${index + 1}';
-    final categories = widget.nearbyList.categories ?? [];
+    final categories = _currentList.categories ?? [];
     final ratingValue = 3 + (index % 3);
 
     return Card(
@@ -419,20 +489,9 @@ class _DiscoverDetailScreenState extends State<DiscoverDetailScreen> {
                 style: const TextStyle(fontWeight: FontWeight.bold),
               ),
               subtitle: Text(
-                'Part of ${widget.nearbyList.name}',
+                'Part of ${_currentList.name}',
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
-              ),
-              trailing: IconButton(
-                icon: const Icon(Icons.map),
-                onPressed: () {
-                  // Simulated position
-                  final offset = 0.002 * index;
-                  _zoomToPlace(
-                    widget.nearbyList.lat + offset * cos(index * 0.5),
-                    widget.nearbyList.lng + offset * sin(index * 0.5),
-                  );
-                },
               ),
             ),
 
@@ -486,33 +545,9 @@ class _DiscoverDetailScreenState extends State<DiscoverDetailScreen> {
     );
   }
 
-  Widget _buildSaveButton() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-      child: SizedBox(
-        height: 44,
-        child: ElevatedButton(
-          onPressed: _isSaving ? null : _saveToMyLists,
-          style: ElevatedButton.styleFrom(
-            backgroundColor: Theme.of(context).colorScheme.primary,
-            foregroundColor: Colors.white,
-          ),
-          child: _isSaving
-              ? const SizedBox(
-                  width: 24,
-                  height: 24,
-                  child: CircularProgressIndicator(color: Colors.white),
-                )
-              : const Text('Save to My Lists'),
-        ),
-      ),
-    );
-  }
-
   Color _getCategoryColor() {
     final categories =
-        widget.nearbyList.categories?.map((c) => c.toLowerCase()).toList() ??
-            [];
+        _currentList.categories?.map((c) => c.toLowerCase()).toList() ?? [];
 
     if (categories.any((c) => c.contains('food') || c.contains('restaurant'))) {
       return Colors.orange;
@@ -532,8 +567,7 @@ class _DiscoverDetailScreenState extends State<DiscoverDetailScreen> {
 
   IconData _getCategoryIcon() {
     final categories =
-        widget.nearbyList.categories?.map((c) => c.toLowerCase()).toList() ??
-            [];
+        _currentList.categories?.map((c) => c.toLowerCase()).toList() ?? [];
 
     if (categories.any((c) => c.contains('food') || c.contains('restaurant'))) {
       return Icons.restaurant;
@@ -550,11 +584,4 @@ class _DiscoverDetailScreenState extends State<DiscoverDetailScreen> {
 
     return Icons.place;
   }
-}
-
-// Helper extension for NearbyList
-extension NearbyListExtension on NearbyList {
-  // Provide coordinates for map (use first place or fallback to a default)
-  double get lat => distance > 0 ? 41.2407 : 41.2407; // Fallback to Hudson
-  double get lng => distance > 0 ? -81.4412 : -81.4412; // Fallback to Hudson
 }

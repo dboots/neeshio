@@ -13,7 +13,8 @@ mixin CategoryMixin {
       return Colors.orange;
     } else if (cats.any((c) => c.contains('shop') || c.contains('store'))) {
       return Colors.blue;
-    } else if (cats.any((c) => c.contains('museum') || c.contains('attraction'))) {
+    } else if (cats
+        .any((c) => c.contains('museum') || c.contains('attraction'))) {
       return Colors.purple;
     } else if (cats.any((c) => c.contains('park') || c.contains('outdoor'))) {
       return Colors.green;
@@ -28,7 +29,8 @@ mixin CategoryMixin {
       return Icons.restaurant;
     } else if (cats.any((c) => c.contains('shop') || c.contains('store'))) {
       return Icons.shopping_bag;
-    } else if (cats.any((c) => c.contains('museum') || c.contains('attraction'))) {
+    } else if (cats
+        .any((c) => c.contains('museum') || c.contains('attraction'))) {
       return Icons.museum;
     } else if (cats.any((c) => c.contains('park') || c.contains('outdoor'))) {
       return Icons.park;
@@ -37,11 +39,88 @@ mixin CategoryMixin {
   }
 }
 
+/// Widget to display vote information
+class VoteDisplay extends StatelessWidget {
+  final int upvotes;
+  final int downvotes;
+  final double size;
+  final bool showCounts;
+
+  const VoteDisplay({
+    Key? key,
+    required this.upvotes,
+    required this.downvotes,
+    this.size = 12,
+    this.showCounts = true,
+  }) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    final totalVotes = upvotes + downvotes;
+    final percentage = totalVotes > 0 ? (upvotes / totalVotes) * 100 : 0.0;
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(
+          Icons.thumb_up,
+          size: size,
+          color: Colors.green,
+        ),
+        if (showCounts) ...[
+          const SizedBox(width: 2),
+          Text(
+            upvotes.toString(),
+            style: TextStyle(
+              fontSize: size - 2,
+              color: Colors.green,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(width: 6),
+        ],
+        Icon(
+          Icons.thumb_down,
+          size: size,
+          color: Colors.red,
+        ),
+        if (showCounts) ...[
+          const SizedBox(width: 2),
+          Text(
+            downvotes.toString(),
+            style: TextStyle(
+              fontSize: size - 2,
+              color: Colors.red,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ],
+        if (!showCounts && totalVotes > 0) ...[
+          const SizedBox(width: 4),
+          Text(
+            '${percentage.round()}%',
+            style: TextStyle(
+              fontSize: size - 2,
+              color: percentage >= 70
+                  ? Colors.green
+                  : percentage >= 50
+                      ? Colors.orange
+                      : Colors.red,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
 /// Card widget for featured lists
 class FeaturedListCard extends StatelessWidget with CategoryMixin {
   final NearbyList nearbyList;
 
-  const FeaturedListCard({Key? key, required this.nearbyList}) : super(key: key);
+  const FeaturedListCard({Key? key, required this.nearbyList})
+      : super(key: key);
 
   @override
   Widget build(BuildContext context) {
@@ -57,15 +136,38 @@ class FeaturedListCard extends StatelessWidget with CategoryMixin {
             height: 120,
             width: double.infinity,
             color: getCategoryColor(nearbyList.categories).withOpacity(0.7),
-            child: Center(
-              child: Icon(
-                getCategoryIcon(nearbyList.categories),
-                color: Colors.white,
-                size: 40,
-              ),
+            child: Stack(
+              children: [
+                Center(
+                  child: Icon(
+                    getCategoryIcon(nearbyList.categories),
+                    color: Colors.white,
+                    size: 40,
+                  ),
+                ),
+                // Vote score indicator
+                Positioned(
+                  top: 8,
+                  right: 8,
+                  child: Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withOpacity(0.7),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: VoteDisplay(
+                      upvotes: nearbyList.upvotes,
+                      downvotes: nearbyList.downvotes,
+                      size: 10,
+                      showCounts: false,
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
-          
+
           Padding(
             padding: const EdgeInsets.all(12),
             child: Column(
@@ -73,7 +175,8 @@ class FeaturedListCard extends StatelessWidget with CategoryMixin {
               children: [
                 // Featured badge
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   decoration: BoxDecoration(
                     color: Colors.amber[700],
                     borderRadius: BorderRadius.circular(4),
@@ -88,16 +191,17 @@ class FeaturedListCard extends StatelessWidget with CategoryMixin {
                   ),
                 ),
                 const SizedBox(height: 8),
-                
+
                 // List name
                 Text(
                   nearbyList.name,
-                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                  style: const TextStyle(
+                      fontWeight: FontWeight.bold, fontSize: 16),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
                 const SizedBox(height: 4),
-                
+
                 // User and rating row
                 Row(
                   children: [
@@ -106,7 +210,8 @@ class FeaturedListCard extends StatelessWidget with CategoryMixin {
                     Expanded(
                       child: Text(
                         nearbyList.userName,
-                        style: const TextStyle(color: Colors.grey, fontSize: 12),
+                        style:
+                            const TextStyle(color: Colors.grey, fontSize: 12),
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
@@ -123,8 +228,8 @@ class FeaturedListCard extends StatelessWidget with CategoryMixin {
                   ],
                 ),
                 const SizedBox(height: 4),
-                
-                // Distance
+
+                // Distance and votes
                 Row(
                   children: [
                     const Icon(Icons.location_on, size: 14, color: Colors.grey),
@@ -132,6 +237,12 @@ class FeaturedListCard extends StatelessWidget with CategoryMixin {
                     Text(
                       nearbyList.getFormattedDistance(),
                       style: const TextStyle(color: Colors.grey, fontSize: 12),
+                    ),
+                    const Spacer(),
+                    VoteDisplay(
+                      upvotes: nearbyList.upvotes,
+                      downvotes: nearbyList.downvotes,
+                      size: 12,
                     ),
                   ],
                 ),
@@ -148,7 +259,8 @@ class FeaturedListCard extends StatelessWidget with CategoryMixin {
 class CategoryListCard extends StatelessWidget with CategoryMixin {
   final NearbyList nearbyList;
 
-  const CategoryListCard({Key? key, required this.nearbyList}) : super(key: key);
+  const CategoryListCard({Key? key, required this.nearbyList})
+      : super(key: key);
 
   @override
   Widget build(BuildContext context) {
@@ -164,15 +276,44 @@ class CategoryListCard extends StatelessWidget with CategoryMixin {
             height: 100,
             width: double.infinity,
             color: getCategoryColor(nearbyList.categories).withOpacity(0.3),
-            child: Center(
-              child: Icon(
-                getCategoryIcon(nearbyList.categories),
-                color: getCategoryColor(nearbyList.categories),
-                size: 30,
-              ),
+            child: Stack(
+              children: [
+                Center(
+                  child: Icon(
+                    getCategoryIcon(nearbyList.categories),
+                    color: getCategoryColor(nearbyList.categories),
+                    size: 30,
+                  ),
+                ),
+                // Vote indicator
+                if (nearbyList.upvotes + nearbyList.downvotes > 0)
+                  Positioned(
+                    top: 4,
+                    right: 4,
+                    child: Container(
+                      padding: const EdgeInsets.all(2),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(8),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.1),
+                            blurRadius: 2,
+                          ),
+                        ],
+                      ),
+                      child: VoteDisplay(
+                        upvotes: nearbyList.upvotes,
+                        downvotes: nearbyList.downvotes,
+                        size: 10,
+                        showCounts: false,
+                      ),
+                    ),
+                  ),
+              ],
             ),
           ),
-          
+
           Padding(
             padding: const EdgeInsets.all(12),
             child: Column(
@@ -181,12 +322,13 @@ class CategoryListCard extends StatelessWidget with CategoryMixin {
                 // List name
                 Text(
                   nearbyList.name,
-                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                  style: const TextStyle(
+                      fontWeight: FontWeight.bold, fontSize: 14),
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                 ),
                 const SizedBox(height: 4),
-                
+
                 // Places count and distance
                 Row(
                   children: [
@@ -202,14 +344,34 @@ class CategoryListCard extends StatelessWidget with CategoryMixin {
                   ],
                 ),
                 const SizedBox(height: 4),
-                
-                // Rating stars
+
+                // Rating stars and vote score
                 Row(
-                  children: List.generate(5, (i) => Icon(
-                    i < nearbyList.averageRating.round() ? Icons.star : Icons.star_border,
-                    size: 14,
-                    color: Colors.amber[700],
-                  )),
+                  children: [
+                    ...List.generate(
+                        5,
+                        (i) => Icon(
+                              i < nearbyList.averageRating.round()
+                                  ? Icons.star
+                                  : Icons.star_border,
+                              size: 14,
+                              color: Colors.amber[700],
+                            )),
+                    const Spacer(),
+                    if (nearbyList.voteScore != 0)
+                      Text(
+                        nearbyList.voteScore > 0
+                            ? '+${nearbyList.voteScore}'
+                            : '${nearbyList.voteScore}',
+                        style: TextStyle(
+                          fontSize: 10,
+                          color: nearbyList.voteScore > 0
+                              ? Colors.green
+                              : Colors.red,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                  ],
                 ),
               ],
             ),
@@ -245,12 +407,42 @@ class NearbyListCard extends StatelessWidget with CategoryMixin {
             child: Container(
               width: double.infinity,
               color: Colors.grey[200],
-              child: Center(
-                child: Icon(
-                  getCategoryIcon(nearbyList.categories),
-                  color: getCategoryColor(nearbyList.categories),
-                  size: 40,
-                ),
+              child: Stack(
+                children: [
+                  Center(
+                    child: Icon(
+                      getCategoryIcon(nearbyList.categories),
+                      color: getCategoryColor(nearbyList.categories),
+                      size: 40,
+                    ),
+                  ),
+                  // Vote score
+                  if (nearbyList.voteScore != 0)
+                    Positioned(
+                      top: 8,
+                      right: 8,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: nearbyList.voteScore > 0
+                              ? Colors.green
+                              : Colors.red,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Text(
+                          nearbyList.voteScore > 0
+                              ? '+${nearbyList.voteScore}'
+                              : '${nearbyList.voteScore}',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
               ),
             ),
           ),
@@ -266,7 +458,8 @@ class NearbyListCard extends StatelessWidget with CategoryMixin {
                   // List name
                   Text(
                     nearbyList.name,
-                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                    style: const TextStyle(
+                        fontWeight: FontWeight.bold, fontSize: 14),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -280,7 +473,8 @@ class NearbyListCard extends StatelessWidget with CategoryMixin {
                       Expanded(
                         child: Text(
                           nearbyList.userName,
-                          style: const TextStyle(color: Colors.grey, fontSize: 10),
+                          style:
+                              const TextStyle(color: Colors.grey, fontSize: 10),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -305,12 +499,13 @@ class NearbyListCard extends StatelessWidget with CategoryMixin {
                       const Spacer(),
                       Text(
                         '${nearbyList.placeCount} places',
-                        style: const TextStyle(color: Colors.grey, fontSize: 10),
+                        style:
+                            const TextStyle(color: Colors.grey, fontSize: 10),
                       ),
                     ],
                   ),
 
-                  // Distance
+                  // Distance and votes
                   const SizedBox(height: 4),
                   Row(
                     children: [
@@ -318,27 +513,42 @@ class NearbyListCard extends StatelessWidget with CategoryMixin {
                       const SizedBox(width: 4),
                       Text(
                         nearbyList.getFormattedDistance(),
-                        style: const TextStyle(color: Colors.grey, fontSize: 10),
+                        style:
+                            const TextStyle(color: Colors.grey, fontSize: 10),
                       ),
+                      const Spacer(),
+                      if (nearbyList.upvotes + nearbyList.downvotes > 0)
+                        VoteDisplay(
+                          upvotes: nearbyList.upvotes,
+                          downvotes: nearbyList.downvotes,
+                          size: 10,
+                          showCounts: false,
+                        ),
                     ],
                   ),
 
                   // Category chips
-                  if (nearbyList.categories != null && nearbyList.categories!.isNotEmpty)
+                  if (nearbyList.categories != null &&
+                      nearbyList.categories!.isNotEmpty)
                     Expanded(
                       child: Padding(
                         padding: const EdgeInsets.only(top: 4),
                         child: Wrap(
                           spacing: 4,
                           runSpacing: 4,
-                          children: nearbyList.categories!.take(3).map((category) {
+                          children:
+                              nearbyList.categories!.take(3).map((category) {
                             return Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 6, vertical: 2),
                               decoration: BoxDecoration(
-                                color: Theme.of(context).colorScheme.primaryContainer,
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .primaryContainer,
                                 borderRadius: BorderRadius.circular(4),
                               ),
-                              child: Text(category, style: const TextStyle(fontSize: 8)),
+                              child: Text(category,
+                                  style: const TextStyle(fontSize: 8)),
                             );
                           }).toList(),
                         ),
