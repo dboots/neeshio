@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import '../services/discover_service.dart';
 import '../services/auth_service.dart';
 import '../widgets/star_rating_widget.dart';
+import '../models/place_list.dart';
+import '../screens/place_map_screen.dart';
 
 class DiscoverDetailScreen extends StatefulWidget {
   final NearbyList nearbyList;
@@ -146,6 +149,91 @@ class _DiscoverDetailScreenState extends State<DiscoverDetailScreen> {
         ],
       ),
     );
+  }
+
+  void _showPlaceOnMap(String placeName, String address) {
+    // Create a place object from the placeholder data
+    final place = _createPlaceFromPlaceholder(placeName, address);
+
+    // Navigate to the map screen with the specific place
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => PlaceMapScreen(
+          place: place,
+          title: 'Location: $placeName',
+        ),
+      ),
+    );
+  }
+
+  Place _createPlaceFromPlaceholder(String placeName, String address) {
+    // Generate a location based on the address
+    // In a real app, you'd geocode the address or have stored coordinates
+    final coordinates = _getCoordinatesForAddress(address);
+
+    return Place(
+      id: 'placeholder_${placeName.toLowerCase().replaceAll(' ', '_')}',
+      name: placeName,
+      address: address,
+      lat: coordinates.latitude,
+      lng: coordinates.longitude,
+      image: null,
+      phone: null,
+    );
+  }
+
+  LatLng _getCoordinatesForAddress(String address) {
+    // Simple geocoding simulation based on city
+    // In a real app, you'd use proper geocoding services
+    if (address.contains('Hudson, OH')) {
+      return const LatLng(41.2407, -81.4412);
+    } else if (address.contains('Cleveland, OH')) {
+      return const LatLng(41.5085, -81.6954);
+    } else if (address.contains('Akron, OH')) {
+      return const LatLng(41.0814, -81.5191);
+    } else if (address.contains('Canton, OH')) {
+      return const LatLng(40.7989, -81.3789);
+    } else if (address.contains('Medina, OH')) {
+      return const LatLng(41.1384, -81.8637);
+    }
+
+    // Default to Hudson with some random offset
+    final random = address.hashCode % 1000;
+    return LatLng(
+      41.2407 + (random % 100 - 50) * 0.001, // Small random offset
+      -81.4412 + (random % 100 - 50) * 0.001,
+    );
+  }
+
+  String _generatePlaceholderAddress(int index) {
+    // Generate realistic placeholder addresses
+    final streets = [
+      'Main Street',
+      'Oak Avenue',
+      'Park Boulevard',
+      'First Street',
+      'Market Street',
+      'Broadway',
+      'Cedar Lane',
+      'Elm Street',
+      'Pine Avenue',
+      'Washington Street',
+    ];
+
+    final cities = [
+      'Hudson, OH',
+      'Cleveland, OH',
+      'Akron, OH',
+      'Canton, OH',
+      'Medina, OH',
+    ];
+
+    final streetNumber = 100 + (index * 47) % 900;
+    final street = streets[index % streets.length];
+    final city = cities[index % cities.length];
+
+    return '$streetNumber $street, $city';
   }
 
   @override
@@ -468,6 +556,7 @@ class _DiscoverDetailScreenState extends State<DiscoverDetailScreen> {
     final placeName = 'Place ${index + 1}';
     final categories = _currentList.categories ?? [];
     final ratingValue = 3 + (index % 3);
+    final placeAddress = _generatePlaceholderAddress(index);
 
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
@@ -488,10 +577,32 @@ class _DiscoverDetailScreenState extends State<DiscoverDetailScreen> {
                 placeName,
                 style: const TextStyle(fontWeight: FontWeight.bold),
               ),
-              subtitle: Text(
-                'Part of ${_currentList.name}',
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
+              subtitle: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      const Icon(Icons.location_on,
+                          size: 14, color: Colors.grey),
+                      const SizedBox(width: 4),
+                      Expanded(
+                        child: Text(
+                          placeAddress,
+                          style:
+                              const TextStyle(color: Colors.grey, fontSize: 13),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+              trailing: IconButton(
+                icon: const Icon(Icons.map, color: Colors.blue),
+                tooltip: 'Show on map',
+                onPressed: () => _showPlaceOnMap(placeName, placeAddress),
               ),
             ),
 
