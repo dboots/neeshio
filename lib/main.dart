@@ -3,11 +3,13 @@ import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'screens/auth_wrapper.dart';
+import 'screens/notification_settings_screen.dart';
 import 'services/auth_service.dart';
 import 'services/place_list_service.dart';
 import 'services/discover_service.dart';
 import 'services/marker_service.dart';
 import 'services/location_service.dart';
+import 'services/notification_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -44,7 +46,8 @@ void main() async {
 class MyApp extends StatelessWidget {
   MyApp({super.key});
 
-  LocationService locationService = LocationService();
+  final LocationService locationService = LocationService();
+  final NotificationService notificationService = NotificationService();
 
   @override
   Widget build(BuildContext context) {
@@ -52,35 +55,46 @@ class MyApp extends StatelessWidget {
       providers: [
         // Location service - should be early as other services may depend on it
         ChangeNotifierProvider(
-          create: (_) => locationService..initialize()
+          create: (_) => locationService..initialize(),
         ),
 
-        // Auth service - should be first as other services depend on it
+        // Notification service - initialize after location
+        ChangeNotifierProvider(
+          create: (_) => notificationService..initialize(),
+        ),
+
+        // Auth service - should be early as other services depend on it
         ChangeNotifierProvider(
           create: (_) => AuthService(),
         ),
 
-        // Place list service - depends on auth state
-        ChangeNotifierProxyProvider<AuthService, PlaceListService>(
+        // Place list service - depends on auth state and can trigger notifications
+        ChangeNotifierProxyProvider2<AuthService, NotificationService,
+            PlaceListService>(
           create: (_) => PlaceListService(),
-          update: (context, authService, placeListService) {
+          update:
+              (context, authService, notificationService, placeListService) {
             // Clear data when user signs out
             if (!authService.isAuthenticated && placeListService != null) {
               placeListService.clearData();
             }
+
+            // Load subscriptions when user signs in
+            if (authService.isAuthenticated &&
+                notificationService.isInitialized) {
+              notificationService.loadSubscriptionsFromServer();
+            }
+
             return placeListService ?? PlaceListService();
           },
         ),
 
-        ChangeNotifierProvider(
-          create: (_) => DiscoverService(),
-        ),
-
         // Other services
+        Provider(create: (_) => DiscoverService()),
         Provider(create: (_) => MarkerService()),
       ],
-      child: Consumer<AuthService>(
-        builder: (context, authService, child) {
+      child: Consumer2<AuthService, NotificationService>(
+        builder: (context, authService, notificationService, child) {
           return MaterialApp(
             title: 'NEESH',
             debugShowCheckedModeBanner: false,
@@ -194,6 +208,9 @@ extension ContextExtensions on BuildContext {
   /// Get the current location service
   LocationService get location => read<LocationService>();
 
+  /// Get the current notification service
+  NotificationService get notifications => read<NotificationService>();
+
   /// Check if user is authenticated
   bool get isAuthenticated => auth.isAuthenticated;
 
@@ -222,6 +239,16 @@ extension ContextExtensions on BuildContext {
             Text(message),
           ],
         ),
+      ),
+    );
+  }
+
+  /// Show notification settings
+  Future<void> showNotificationSettings() async {
+    Navigator.push(
+      this,
+      MaterialPageRoute(
+        builder: (context) => const NotificationSettingsScreen(),
       ),
     );
   }

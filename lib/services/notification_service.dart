@@ -45,199 +45,6 @@ class PlaceListService extends ChangeNotifier {
         _loadSharedLists(),
       ]);
     } catch (e) {
-      _setError('Failed to create list: ${e.toString()}');
-      throw Exception('Failed to create list: ${e.toString()}');
-    } finally {
-      _setLoading(false);
-    }
-  }
-
-  /// Make a list public and trigger notifications
-  Future<void> makeListPublic(String listId) async {
-    try {
-      _setLoading(true);
-      _clearError();
-
-      final userId = _getCurrentUserId();
-      if (userId == null) {
-        throw Exception('User not authenticated');
-      }
-
-      // Check if user owns this list
-      final listExists = await _supabase
-          .from('place_lists')
-          .select('user_id')
-          .eq('id', listId)
-          .single();
-
-      if (listExists['user_id'] != userId) {
-        throw Exception('You can only make your own lists public');
-      }
-
-      // Update list to public
-      await _supabase.from('place_lists').update({
-        'is_public': true,
-        'updated_at': DateTime.now().toIso8601String(),
-      }).eq('id', listId);
-
-      // Update local cache
-      final index = _lists.indexWhere((list) => list.id == listId);
-      if (index != -1) {
-        // The notification trigger will fire automatically from the database
-        // when the list is updated to public status
-      }
-
-      if (kDebugMode) {
-        print('Made list public: $listId - notifications will be sent automatically');
-      }
-    } catch (e) {
-      _setError('Failed to make list public: ${e.toString()}');
-      throw Exception('Failed to make list public: ${e.toString()}');
-    } finally {
-      _setLoading(false);
-    }
-  }
-
-  /// Make a list private (disable notifications)
-  Future<void> makeListPrivate(String listId) async {
-    try {
-      _setLoading(true);
-      _clearError();
-
-      final userId = _getCurrentUserId();
-      if (userId == null) {
-        throw Exception('User not authenticated');
-      }
-
-      // Check if user owns this list
-      final listExists = await _supabase
-          .from('place_lists')
-          .select('user_id')
-          .eq('id', listId)
-          .single();
-
-      if (listExists['user_id'] != userId) {
-        throw Exception('You can only modify your own lists');
-      }
-
-      // Update list to private
-      await _supabase.from('place_lists').update({
-        'is_public': false,
-        'updated_at': DateTime.now().toIso8601String(),
-      }).eq('id', listId);
-
-      if (kDebugMode) {
-        print('Made list private: $listId');
-      }
-    } catch (e) {
-      _setError('Failed to make list private: ${e.toString()}');
-      throw Exception('Failed to make list private: ${e.toString()}');
-    } finally {
-      _setLoading(false);
-    }
-  }
-
-  /// Update a list's basic information
-  Future<void> updateList(PlaceList updatedList) async {
-    try {
-      _setLoading(true);
-      _clearError();
-
-      await _supabase.from('place_lists').update({
-        'name': updatedList.name.trim(),
-        'description': updatedList.description?.trim(),
-        'updated_at': DateTime.now().toIso8601String(),
-      }).eq('id', updatedList.id);
-
-      // Update local cache
-      final index = _lists.indexWhere((list) => list.id == updatedList.id);
-      if (index != -1) {
-        _lists[index] = updatedList;
-      }
-    } catch (e) {
-      _setError('Failed to update list: ${e.toString()}');
-      throw Exception('Failed to update list: ${e.toString()}');
-    } finally {
-      _setLoading(false);
-    }
-  }
-
-  /// Delete a list and all its associated data
-  Future<void> deleteList(String listId) async {
-    try {
-      _setLoading(true);
-      _clearError();
-
-      // Supabase should handle cascade deletes via foreign key constraints
-      // This will delete the list and all related data (entries, ratings, etc.)
-      await _supabase.from('place_lists').delete().eq('id', listId);
-
-      // Remove from local cache
-      _lists.removeWhere((list) => list.id == listId);
-      _sharedLists.removeWhere((list) => list.id == listId);
-    } catch (e) {
-      _setError('Failed to delete list: ${e.toString()}');
-      throw Exception('Failed to delete list: ${e.toString()}');
-    } finally {
-      _setLoading(false);
-    }
-  }
-
-  /// Add a rating category to a list
-  Future<void> addRatingCategory(String listId, RatingCategory category) async {
-    try {
-      _setLoading(true);
-      _clearError();
-
-      await _supabase.from('rating_categories').insert({
-        'id': category.id,
-        'list_id': listId,
-        'name': category.name.trim(),
-        'description': category.description?.trim(),
-        'created_at': DateTime.now().toIso8601String(),
-      });
-
-      // Update local cache
-      final index = _lists.indexWhere((list) => list.id == listId);
-      if (index != -1) {
-        final updatedList = _lists[index].addRatingCategory(category);
-        _lists[index] = updatedList;
-      }
-    } catch (e) {
-      _setError('Failed to add rating category: ${e.toString()}');
-      throw Exception('Failed to add rating category: ${e.toString()}');
-    } finally {
-      _setLoading(false);
-    }
-  }
-
-  /// Remove a rating category from a list
-  Future<void> removeRatingCategory(String listId, String categoryId) async {
-    try {
-      _setLoading(true);
-      _clearError();
-
-      // Delete category from Supabase (ratings should cascade delete)
-      await _supabase.from('rating_categories').delete().eq('id', categoryId);
-
-      // Update local cache
-      final index = _lists.indexWhere((list) => list.id == listId);
-      if (index != -1) {
-        final updatedList = _lists[index].removeRatingCategory(categoryId);
-        _lists[index] = updatedList;
-      }
-    } catch (e) {
-      _setError('Failed to remove rating category: ${e.toString()}');
-      throw Exception('Failed to remove rating category: ${e.toString()}');
-    } finally {
-      _setLoading(false);
-    }
-  }
-
-  /// Check if a string is a valid UUID
-  bool _isValidUuid(String id) {
-    final uuidRegex = RegExp(
-        r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}
       _setError('Failed to load lists: ${e.toString()}');
       if (kDebugMode) {
         print('Error loading lists: $e');
@@ -249,31 +56,38 @@ class PlaceListService extends ChangeNotifier {
 
   /// Load lists owned by the current user
   Future<void> _loadOwnedLists(String userId) async {
-    // Query all lists owned by the user
-    final listsResponse = await _supabase
-        .from('place_lists')
-        .select()
-        .eq('user_id', userId)
-        .order('created_at', ascending: false);
+    try {
+      // Query all lists owned by the user
+      final listsResponse = await _supabase
+          .from('place_lists')
+          .select()
+          .eq('user_id', userId)
+          .order('created_at', ascending: false);
 
-    final loadedLists = <PlaceList>[];
+      final loadedLists = <PlaceList>[];
 
-    // Load detailed data for each list
-    for (final listData in listsResponse) {
-      try {
-        final placeList = await _loadListWithDetails(listData['id']);
-        if (placeList != null) {
-          loadedLists.add(placeList);
+      // Load detailed data for each list
+      for (final listData in listsResponse) {
+        try {
+          final placeList = await _loadListWithDetails(listData['id']);
+          if (placeList != null) {
+            loadedLists.add(placeList);
+          }
+        } catch (e) {
+          if (kDebugMode) {
+            print('Error loading list ${listData['id']}: $e');
+          }
+          // Continue loading other lists even if one fails
         }
-      } catch (e) {
-        if (kDebugMode) {
-          print('Error loading list ${listData['id']}: $e');
-        }
-        // Continue loading other lists even if one fails
       }
-    }
 
-    _lists = loadedLists;
+      _lists = loadedLists;
+    } catch (e) {
+      if (kDebugMode) {
+        print('Error loading owned lists: $e');
+      }
+      rethrow;
+    }
   }
 
   /// Load lists shared with the current user
@@ -407,7 +221,7 @@ class PlaceListService extends ChangeNotifier {
     }
   }
 
-  /// Create a new list with enhanced notification support
+  /// Create a new list
   Future<PlaceList> createList(String name,
       [String? description, List<RatingCategory>? ratingCategories]) async {
     try {
@@ -477,7 +291,114 @@ class PlaceListService extends ChangeNotifier {
         rethrow;
       }
     } catch (e) {
-      );
+      _setError('Failed to create list: ${e.toString()}');
+      throw Exception('Failed to create list: ${e.toString()}');
+    } finally {
+      _setLoading(false);
+    }
+  }
+
+  /// Update a list's basic information
+  Future<void> updateList(PlaceList updatedList) async {
+    try {
+      _setLoading(true);
+      _clearError();
+
+      await _supabase.from('place_lists').update({
+        'name': updatedList.name.trim(),
+        'description': updatedList.description?.trim(),
+        'updated_at': DateTime.now().toIso8601String(),
+      }).eq('id', updatedList.id);
+
+      // Update local cache
+      final index = _lists.indexWhere((list) => list.id == updatedList.id);
+      if (index != -1) {
+        _lists[index] = updatedList;
+      }
+    } catch (e) {
+      _setError('Failed to update list: ${e.toString()}');
+      throw Exception('Failed to update list: ${e.toString()}');
+    } finally {
+      _setLoading(false);
+    }
+  }
+
+  /// Delete a list and all its associated data
+  Future<void> deleteList(String listId) async {
+    try {
+      _setLoading(true);
+      _clearError();
+
+      // Supabase should handle cascade deletes via foreign key constraints
+      // This will delete the list and all related data (entries, ratings, etc.)
+      await _supabase.from('place_lists').delete().eq('id', listId);
+
+      // Remove from local cache
+      _lists.removeWhere((list) => list.id == listId);
+      _sharedLists.removeWhere((list) => list.id == listId);
+    } catch (e) {
+      _setError('Failed to delete list: ${e.toString()}');
+      throw Exception('Failed to delete list: ${e.toString()}');
+    } finally {
+      _setLoading(false);
+    }
+  }
+
+  /// Add a rating category to a list
+  Future<void> addRatingCategory(String listId, RatingCategory category) async {
+    try {
+      _setLoading(true);
+      _clearError();
+
+      await _supabase.from('rating_categories').insert({
+        'id': category.id,
+        'list_id': listId,
+        'name': category.name.trim(),
+        'description': category.description?.trim(),
+        'created_at': DateTime.now().toIso8601String(),
+      });
+
+      // Update local cache
+      final index = _lists.indexWhere((list) => list.id == listId);
+      if (index != -1) {
+        final updatedList = _lists[index].addRatingCategory(category);
+        _lists[index] = updatedList;
+      }
+    } catch (e) {
+      _setError('Failed to add rating category: ${e.toString()}');
+      throw Exception('Failed to add rating category: ${e.toString()}');
+    } finally {
+      _setLoading(false);
+    }
+  }
+
+  /// Remove a rating category from a list
+  Future<void> removeRatingCategory(String listId, String categoryId) async {
+    try {
+      _setLoading(true);
+      _clearError();
+
+      // Delete category from Supabase (ratings should cascade delete)
+      await _supabase.from('rating_categories').delete().eq('id', categoryId);
+
+      // Update local cache
+      final index = _lists.indexWhere((list) => list.id == listId);
+      if (index != -1) {
+        final updatedList = _lists[index].removeRatingCategory(categoryId);
+        _lists[index] = updatedList;
+      }
+    } catch (e) {
+      _setError('Failed to remove rating category: ${e.toString()}');
+      throw Exception('Failed to remove rating category: ${e.toString()}');
+    } finally {
+      _setLoading(false);
+    }
+  }
+
+  /// Check if a string is a valid UUID
+  bool _isValidUuid(String id) {
+    final uuidRegex = RegExp(
+        r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$');
     return uuidRegex.hasMatch(id);
   }
 
@@ -553,12 +474,7 @@ class PlaceListService extends ChangeNotifier {
       }
 
       // Insert the place
-      final response =
-          await _supabase.from('places').insert(insertData).select();
-
-      if (response.isEmpty) {
-        throw Exception('Failed to insert place - no data returned');
-      }
+      await _supabase.from('places').insert(insertData);
 
       if (kDebugMode) {
         print('Successfully created place: ${place.name} with ID: $internalId');
@@ -640,12 +556,7 @@ class PlaceListService extends ChangeNotifier {
         entryData['notes'] = notes.trim();
       }
 
-      final entryResponse =
-          await _supabase.from('list_entries').insert(entryData).select();
-
-      if (entryResponse.isEmpty) {
-        throw Exception('Failed to create list entry');
-      }
+      await _supabase.from('list_entries').insert(entryData);
 
       if (kDebugMode) {
         print('Successfully created list entry with ID: $entryId');
@@ -666,13 +577,10 @@ class PlaceListService extends ChangeNotifier {
             .toList();
 
         if (ratingsData.isNotEmpty) {
-          final ratingsResponse = await _supabase
-              .from('rating_values')
-              .insert(ratingsData)
-              .select();
+          await _supabase.from('rating_values').insert(ratingsData);
 
           if (kDebugMode) {
-            print('Successfully inserted ${ratingsResponse.length} ratings');
+            print('Successfully inserted ${ratingsData.length} ratings');
           }
         }
       }
@@ -891,9 +799,9 @@ class PlaceListService extends ChangeNotifier {
         throw Exception('You can only modify your own lists');
       }
 
-      final wasPublic = listData['is_public'] as bool;
+      final wasPublic = listData['is_public'] as bool?;
 
-      // Update visibility
+      // Update visibility - this will trigger the database function if becoming public
       await _supabase.from('place_lists').update({
         'is_public': isPublic,
         'updated_at': DateTime.now().toIso8601String(),
@@ -901,9 +809,10 @@ class PlaceListService extends ChangeNotifier {
 
       // Log the visibility change
       if (kDebugMode) {
-        if (isPublic && !wasPublic) {
-          print('List $listId made public - notifications will be triggered');
-        } else if (!isPublic && wasPublic) {
+        if (isPublic && (wasPublic != true)) {
+          print(
+              'List $listId made public - notifications will be triggered by database trigger');
+        } else if (!isPublic && (wasPublic == true)) {
           print('List $listId made private');
         }
       }
@@ -950,242 +859,3 @@ class PlaceListService extends ChangeNotifier {
     await loadLists();
   }
 }
-      _setError('Failed to load lists: ${e.toString()}');
-      if (kDebugMode) {
-        print('Error loading lists: $e');
-      }
-    } finally {
-      _setLoading(false);
-    }
-  }
-
-  /// Load lists owned by the current user
-  Future<void> _loadOwnedLists(String userId) async {
-    // Query all lists owned by the user
-    final listsResponse = await _supabase
-        .from('place_lists')
-        .select()
-        .eq('user_id', userId)
-        .order('created_at', ascending: false);
-
-    final loadedLists = <PlaceList>[];
-
-    // Load detailed data for each list
-    for (final listData in listsResponse) {
-      try {
-        final placeList = await _loadListWithDetails(listData['id']);
-        if (placeList != null) {
-          loadedLists.add(placeList);
-        }
-      } catch (e) {
-        if (kDebugMode) {
-          print('Error loading list ${listData['id']}: $e');
-        }
-        // Continue loading other lists even if one fails
-      }
-    }
-
-    _lists = loadedLists;
-  }
-
-  /// Load lists shared with the current user
-  Future<void> _loadSharedLists() async {
-    try {
-      final user = _supabase.auth.currentUser;
-      if (user?.email == null) return;
-
-      // Get lists shared with the user's email
-      final sharesResponse = await _supabase.from('shares').select('''
-            list_id,
-            place_lists!inner(*)
-          ''').eq('email', user!.email!);
-
-      final loadedSharedLists = <PlaceList>[];
-
-      for (final shareData in sharesResponse) {
-        try {
-          final listId = shareData['list_id'];
-          final placeList = await _loadListWithDetails(listId);
-          if (placeList != null) {
-            loadedSharedLists.add(placeList);
-          }
-        } catch (e) {
-          if (kDebugMode) {
-            print('Error loading shared list: $e');
-          }
-        }
-      }
-
-      _sharedLists = loadedSharedLists;
-    } catch (e) {
-      if (kDebugMode) {
-        print('Error loading shared lists: $e');
-      }
-      // Don't throw error for shared lists, just log it
-    }
-  }
-
-  /// Load a complete list with all its details
-  Future<PlaceList?> _loadListWithDetails(String listId) async {
-    try {
-      // Get list basic info
-      final listResponse = await _supabase
-          .from('place_lists')
-          .select()
-          .eq('id', listId)
-          .single();
-
-      // Get rating categories for this list
-      final categoriesResponse = await _supabase
-          .from('rating_categories')
-          .select()
-          .eq('list_id', listId)
-          .order('name');
-
-      final ratingCategories = categoriesResponse
-          .map((category) => RatingCategory(
-                id: category['id'],
-                name: category['name'],
-                description: category['description'],
-              ))
-          .toList();
-
-      // Get entries (places) in this list with their ratings
-      final entriesResponse = await _supabase.from('list_entries').select('''
-            *,
-            places!inner(*)
-          ''').eq('list_id', listId).order('created_at');
-
-      final entries = <PlaceEntry>[];
-
-      for (final entryData in entriesResponse) {
-        try {
-          final entryId = entryData['id'];
-          final placeData = entryData['places'];
-
-          // Get ratings for this entry
-          final ratingsResponse = await _supabase
-              .from('rating_values')
-              .select()
-              .eq('entry_id', entryId);
-
-          final ratings = ratingsResponse
-              .map((rating) => RatingValue(
-                    categoryId: rating['category_id'],
-                    value: rating['value'],
-                  ))
-              .toList();
-
-          // Create Place from place data
-          final place = Place(
-            id: placeData['id'],
-            name: placeData['name'],
-            address: placeData['address'],
-            lat: placeData['lat']?.toDouble() ?? 0.0,
-            lng: placeData['lng']?.toDouble() ?? 0.0,
-            image: placeData['image_url'],
-            phone: placeData['phone'],
-          );
-
-          // Create entry
-          final entry = PlaceEntry(
-            place: place,
-            ratings: ratings,
-            notes: entryData['notes'],
-          );
-
-          entries.add(entry);
-        } catch (e) {
-          if (kDebugMode) {
-            print('Error loading entry: $e');
-          }
-          // Continue with other entries
-        }
-      }
-
-      // Create and return the complete list
-      return PlaceList(
-        id: listId,
-        name: listResponse['name'],
-        description: listResponse['description'],
-        entries: entries,
-        ratingCategories: ratingCategories,
-      );
-    } catch (e) {
-      if (kDebugMode) {
-        print('Error loading list details for $listId: $e');
-      }
-      return null;
-    }
-  }
-
-  /// Create a new list with enhanced notification support
-  Future<PlaceList> createList(String name,
-      [String? description, List<RatingCategory>? ratingCategories]) async {
-    try {
-      _setLoading(true);
-      _clearError();
-
-      final userId = _getCurrentUserId();
-      if (userId == null) {
-        throw Exception('User not authenticated');
-      }
-
-      final listId = _uuid.v4();
-
-      // Start a transaction-like approach
-      try {
-        // Insert list into Supabase with is_public defaulting to false
-        await _supabase.from('place_lists').insert({
-          'id': listId,
-          'user_id': userId,
-          'name': name.trim(),
-          'description': description?.trim(),
-          'is_public': false, // New lists start as private
-          'created_at': DateTime.now().toIso8601String(),
-        });
-
-        // Insert rating categories if provided
-        if (ratingCategories != null && ratingCategories.isNotEmpty) {
-          final categoriesData = ratingCategories
-              .map((category) => {
-                    'id': category.id,
-                    'list_id': listId,
-                    'name': category.name.trim(),
-                    'description': category.description?.trim(),
-                    'created_at': DateTime.now().toIso8601String(),
-                  })
-              .toList();
-
-          await _supabase.from('rating_categories').insert(categoriesData);
-        }
-
-        // Create PlaceList object
-        final newList = PlaceList(
-          id: listId,
-          name: name.trim(),
-          description: description?.trim(),
-          entries: [],
-          ratingCategories: ratingCategories ?? [],
-        );
-
-        // Add to local cache
-        _lists.insert(0, newList); // Add to beginning for recency
-
-        if (kDebugMode) {
-          print('Created new list: ${newList.name} (ID: $listId)');
-        }
-
-        return newList;
-      } catch (e) {
-        // If something went wrong, try to cleanup
-        try {
-          await _supabase.from('place_lists').delete().eq('id', listId);
-        } catch (cleanupError) {
-          if (kDebugMode) {
-            print('Failed to cleanup after create error: $cleanupError');
-          }
-        }
-        rethrow;
-      }
-    } catch (e) {

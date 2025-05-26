@@ -1,13 +1,8 @@
 // lib/screens/discover_screen.dart
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
-import 'package:geolocator/geolocator.dart';
-import 'package:neesh/services/location_service.dart';
-import 'package:permission_handler/permission_handler.dart';
-import 'package:provider/provider.dart';
 
 import '../services/discover_service.dart';
-import '../utils/location_utils.dart';
 import '../widgets/location_selector_widget.dart';
 import '../widgets/category_filter_widget.dart';
 import '../widgets/discover_content_widget.dart';
@@ -62,8 +57,6 @@ class _DiscoverScreenState extends State<DiscoverScreen>
   }
 
   Future<void> _getCurrentLocation() async {
-    final locationService =
-        Provider.of<LocationService>(context, listen: false);
     setState(() => _isLoadingLocation = true);
 
     try {
@@ -79,24 +72,6 @@ class _DiscoverScreenState extends State<DiscoverScreen>
           ),
         );
       }
-    }
-  }
-
-  void _updateLocationName() {
-    if (LocationUtils.calculateDistance(_currentLocation.latitude,
-            _currentLocation.longitude, 41.2407, -81.4412) <
-        10) {
-      _currentLocationName = 'Hudson, Ohio';
-    } else if (LocationUtils.calculateDistance(_currentLocation.latitude,
-            _currentLocation.longitude, 41.5085, -81.6954) <
-        15) {
-      _currentLocationName = 'Cleveland, Ohio';
-    } else if (LocationUtils.calculateDistance(_currentLocation.latitude,
-            _currentLocation.longitude, 41.0814, -81.5191) <
-        15) {
-      _currentLocationName = 'Akron, Ohio';
-    } else {
-      _currentLocationName = 'Current Location';
     }
   }
 
