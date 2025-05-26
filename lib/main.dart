@@ -72,8 +72,11 @@ class MyApp extends StatelessWidget {
           },
         ),
 
+        ChangeNotifierProvider(
+          create: (_) => DiscoverService(),
+        ),
+
         // Other services
-        Provider(create: (_) => DiscoverService()),
         Provider(create: (_) => MarkerService()),
       ],
       child: Consumer<AuthService>(

@@ -247,9 +247,9 @@ class DiscoverService extends ChangeNotifier {
       }
 
       await _supabase.rpc('vote_on_list', params: {
-        'list_id': listId,
-        'user_id': userId,
-        'vote_value': voteValue,
+        'p_list_id': listId,
+        'p_user_id': userId,
+        'p_vote_value': voteValue,
       });
 
       // Update local cache

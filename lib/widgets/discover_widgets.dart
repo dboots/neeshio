@@ -126,7 +126,7 @@ class FeaturedListCard extends StatelessWidget with CategoryMixin {
   Widget build(BuildContext context) {
     return ListCardBase(
       nearbyList: nearbyList,
-      width: 280,
+      width: 250,
       height: 250,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -215,19 +215,8 @@ class FeaturedListCard extends StatelessWidget with CategoryMixin {
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
-                    Icon(Icons.star, size: 14, color: Colors.amber[700]),
-                    const SizedBox(width: 4),
-                    Text(
-                      nearbyList.averageRating.toStringAsFixed(1),
-                      style: TextStyle(
-                        color: Colors.amber[700],
-                        fontSize: 12,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
                   ],
                 ),
-                const SizedBox(height: 4),
 
                 // Distance and votes
                 Row(

@@ -321,12 +321,6 @@ class _DiscoverDetailScreenState extends State<DiscoverDetailScreen> {
             fontWeight: FontWeight.bold,
           ),
         ),
-        const Spacer(),
-        StarRatingDisplay(
-          rating: _currentList.averageRating,
-          showValue: true,
-          size: 20,
-        ),
       ],
     );
   }
