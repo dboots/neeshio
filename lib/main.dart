@@ -9,7 +9,6 @@ import 'services/place_list_service.dart';
 import 'services/discover_service.dart';
 import 'services/marker_service.dart';
 import 'services/location_service.dart';
-import 'services/notification_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -47,7 +46,6 @@ class MyApp extends StatelessWidget {
   MyApp({super.key});
 
   final LocationService locationService = LocationService();
-  final NotificationService notificationService = NotificationService();
 
   @override
   Widget build(BuildContext context) {
@@ -58,31 +56,18 @@ class MyApp extends StatelessWidget {
           create: (_) => locationService..initialize(),
         ),
 
-        // Notification service - initialize after location
-        ChangeNotifierProvider(
-          create: (_) => notificationService..initialize(),
-        ),
-
         // Auth service - should be early as other services depend on it
         ChangeNotifierProvider(
           create: (_) => AuthService(),
         ),
 
-        // Place list service - depends on auth state and can trigger notifications
-        ChangeNotifierProxyProvider2<AuthService, NotificationService,
-            PlaceListService>(
+        // Place list service - depends on auth state
+        ChangeNotifierProxyProvider<AuthService, PlaceListService>(
           create: (_) => PlaceListService(),
-          update:
-              (context, authService, notificationService, placeListService) {
+          update: (context, authService, placeListService) {
             // Clear data when user signs out
             if (!authService.isAuthenticated && placeListService != null) {
               placeListService.clearData();
-            }
-
-            // Load subscriptions when user signs in
-            if (authService.isAuthenticated &&
-                notificationService.isInitialized) {
-              notificationService.loadSubscriptionsFromServer();
             }
 
             return placeListService ?? PlaceListService();
@@ -93,8 +78,8 @@ class MyApp extends StatelessWidget {
         Provider(create: (_) => DiscoverService()),
         Provider(create: (_) => MarkerService()),
       ],
-      child: Consumer2<AuthService, NotificationService>(
-        builder: (context, authService, notificationService, child) {
+      child: Consumer<AuthService>(
+        builder: (context, authService, child) {
           return MaterialApp(
             title: 'NEESH',
             debugShowCheckedModeBanner: false,
@@ -207,9 +192,6 @@ extension ContextExtensions on BuildContext {
 
   /// Get the current location service
   LocationService get location => read<LocationService>();
-
-  /// Get the current notification service
-  NotificationService get notifications => read<NotificationService>();
 
   /// Check if user is authenticated
   bool get isAuthenticated => auth.isAuthenticated;
