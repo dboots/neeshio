@@ -244,7 +244,7 @@ class BackgroundNotificationProcessor {
       final result = await _supabase
           .from('notification_queue')
           .delete()
-          .in_('status', ['sent', 'failed'])
+          .contains('status', ['sent', 'failed'])
           .lt('created_at', cutoffDate);
 
       if (kDebugMode) {

@@ -1,7 +1,6 @@
 // lib/widgets/discover_widgets.dart
 import 'package:flutter/material.dart';
 import '../services/discover_service.dart';
-import '../screens/discover_detail_screen.dart';
 import 'discover/list_card_base.dart';
 
 /// Base mixin for category-related functionality

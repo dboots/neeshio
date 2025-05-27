@@ -17,7 +17,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   bool _isEditing = false;
   bool _isLoading = true;
-  Map<String, dynamic>? _profile;
   Map<String, dynamic> _notificationStats = {};
 
   @override
@@ -43,7 +42,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
       final profile = await authService.getUserProfile();
 
       setState(() {
-        _profile = profile;
         if (profile != null && profile['name'] != null) {
           _nameController.text = profile['name'];
         } else if (authService.user?.userMetadata?['name'] != null) {
@@ -150,29 +148,29 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Future<void> _testNotification() async {
-    try {
-      final notificationService =
-          Provider.of<NotificationService>(context, listen: false);
-      await notificationService.sendTestNotification();
+    // try {
+    //   final notificationService =
+    //       Provider.of<NotificationService>(context, listen: false);
+    //   await notificationService.sendTestNotification();
 
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Test notification sent!'),
-            backgroundColor: Colors.green,
-          ),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error sending test notification: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    }
+    //   if (mounted) {
+    //     ScaffoldMessenger.of(context).showSnackBar(
+    //       const SnackBar(
+    //         content: Text('Test notification sent!'),
+    //         backgroundColor: Colors.green,
+    //       ),
+    //     );
+    //   }
+    // } catch (e) {
+    //   if (mounted) {
+    //     ScaffoldMessenger.of(context).showSnackBar(
+    //       SnackBar(
+    //         content: Text('Error sending test notification: $e'),
+    //         backgroundColor: Colors.red,
+    //       ),
+    //     );
+    //   }
+    // }
   }
 
   Widget _buildStatColumn(
@@ -562,28 +560,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     },
                   ),
                 ],
-              ),
-            ),
-
-            // Sign Out Button
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 16.0),
-              child: SizedBox(
-                width: double.infinity,
-                child: ElevatedButton.icon(
-                  onPressed: _signOut,
-                  icon: const Icon(Icons.logout),
-                  label: const Text('Sign Out'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.red,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    textStyle: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
               ),
             ),
           ],

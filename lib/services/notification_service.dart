@@ -1,861 +1,750 @@
+import 'dart:ui';
+
 import 'package:flutter/foundation.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:uuid/uuid.dart';
-import '../models/place_list.dart';
-import '../models/place_rating.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:convert';
+import 'dart:io';
+import 'dart:async';
 
-class PlaceListService extends ChangeNotifier {
-  List<PlaceList> _lists = [];
-  List<PlaceList> _sharedLists = [];
-  bool _isLoading = false;
+/// Service for handling push notifications using Supabase realtime and Edge Functions
+class NotificationService extends ChangeNotifier {
+  static const String _subscriptionsKey = 'notification_subscriptions';
+  static const String _deviceIdKey = 'device_id';
+  static const String _notificationsEnabledKey = 'notifications_enabled';
+
+  final SupabaseClient _supabase;
+  final FlutterLocalNotificationsPlugin _localNotifications;
+
+  List<String> _subscribedCategories = [];
+  bool _isInitialized = false;
+  bool _notificationsEnabled = false;
+  String? _deviceId;
   String? _error;
+  RealtimeChannel? _notificationChannel;
+  Timer? _heartbeatTimer;
+  StreamSubscription? _authSubscription;
 
-  List<PlaceList> get lists => _lists;
-  List<PlaceList> get sharedLists => _sharedLists;
-  bool get isLoading => _isLoading;
+  // Available categories for subscription
+  static const List<String> availableCategories = [
+    'Food & Dining',
+    'Shopping',
+    'Attractions',
+    'Outdoors',
+    'Entertainment',
+    'Health & Fitness',
+    'Services',
+    'Other'
+  ];
+
+  // Getters
+  List<String> get subscribedCategories => List.from(_subscribedCategories);
+  bool get isInitialized => _isInitialized;
+  bool get notificationsEnabled => _notificationsEnabled;
+  String? get deviceId => _deviceId;
   String? get error => _error;
 
-  final _uuid = const Uuid();
-  final _supabase = Supabase.instance.client;
+  NotificationService({
+    SupabaseClient? supabase,
+    FlutterLocalNotificationsPlugin? localNotifications,
+  })  : _supabase = supabase ?? Supabase.instance.client,
+        _localNotifications =
+            localNotifications ?? FlutterLocalNotificationsPlugin();
 
-  /// Clear all data when user signs out
-  void clearData() {
-    _lists = [];
-    _sharedLists = [];
-    _error = null;
-    _isLoading = false;
-    notifyListeners();
+  /// Initialize the notification service
+  Future<void> initialize() async {
+    try {
+      _error = null;
+
+      if (kDebugMode) {
+        print('Initializing NotificationService...');
+      }
+
+      // Initialize local notifications
+      await _initializeLocalNotifications();
+
+      // Generate or load device ID
+      await _initializeDeviceId();
+
+      // Load saved preferences
+      await _loadPreferences();
+
+      // Request permissions if enabled
+      if (_notificationsEnabled) {
+        await _requestPermissions();
+      }
+
+      // Load saved subscriptions
+      await _loadSubscriptions();
+
+      // Setup auth state listener
+      _setupAuthListener();
+
+      // Setup realtime subscription for notifications if authenticated
+      if (_supabase.auth.currentUser != null && _notificationsEnabled) {
+        await _setupRealtimeNotifications();
+      }
+
+      _isInitialized = true;
+      notifyListeners();
+
+      if (kDebugMode) {
+        print('NotificationService initialized successfully');
+        print('Device ID: $_deviceId');
+        print('Notifications enabled: $_notificationsEnabled');
+        print('Subscribed categories: $_subscribedCategories');
+      }
+    } catch (e) {
+      _error = 'Failed to initialize notifications: ${e.toString()}';
+      if (kDebugMode) {
+        print(_error);
+      }
+      notifyListeners();
+    }
   }
 
-  /// Load all lists (owned and shared) from Supabase
-  Future<void> loadLists() async {
-    try {
-      _setLoading(true);
-      _clearError();
+  /// Initialize local notifications
+  Future<void> _initializeLocalNotifications() async {
+    const AndroidInitializationSettings initializationSettingsAndroid =
+        AndroidInitializationSettings('@mipmap/ic_launcher');
 
-      // Check authentication
-      final userId = _getCurrentUserId();
+    const DarwinInitializationSettings initializationSettingsIOS =
+        DarwinInitializationSettings(
+      requestAlertPermission: false, // We'll request this separately
+      requestBadgePermission: false,
+      requestSoundPermission: false,
+    );
+
+    const InitializationSettings initializationSettings =
+        InitializationSettings(
+      android: initializationSettingsAndroid,
+      iOS: initializationSettingsIOS,
+    );
+
+    await _localNotifications.initialize(
+      initializationSettings,
+      onDidReceiveNotificationResponse: _onNotificationTapped,
+    );
+
+    if (kDebugMode) {
+      print('Local notifications initialized');
+    }
+  }
+
+  /// Initialize or load device ID
+  Future<void> _initializeDeviceId() async {
+    final prefs = await SharedPreferences.getInstance();
+    _deviceId = prefs.getString(_deviceIdKey);
+
+    if (_deviceId == null) {
+      // Generate a unique device ID
+      _deviceId =
+          'device_${Platform.operatingSystem}_${DateTime.now().millisecondsSinceEpoch}';
+      await prefs.setString(_deviceIdKey, _deviceId!);
+
+      if (kDebugMode) {
+        print('Generated new device ID: $_deviceId');
+      }
+    } else {
+      if (kDebugMode) {
+        print('Loaded existing device ID: $_deviceId');
+      }
+    }
+  }
+
+  /// Load saved preferences
+  Future<void> _loadPreferences() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      _notificationsEnabled = prefs.getBool(_notificationsEnabledKey) ?? false;
+
+      if (kDebugMode) {
+        print(
+            'Loaded notification preferences: enabled=$_notificationsEnabled');
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        print('Error loading preferences: $e');
+      }
+    }
+  }
+
+  /// Save preferences
+  Future<void> _savePreferences() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_notificationsEnabledKey, _notificationsEnabled);
+    } catch (e) {
+      if (kDebugMode) {
+        print('Error saving preferences: $e');
+      }
+    }
+  }
+
+  /// Setup auth state listener
+  void _setupAuthListener() {
+    _authSubscription = _supabase.auth.onAuthStateChange.listen((data) {
+      final event = data.event;
+      final session = data.session;
+
+      if (kDebugMode) {
+        print('Auth state changed: $event');
+      }
+
+      if (event == AuthChangeEvent.signedIn && session != null) {
+        // User signed in - setup notifications if enabled
+        if (_notificationsEnabled) {
+          _setupRealtimeNotifications();
+          loadSubscriptionsFromServer();
+        }
+      } else if (event == AuthChangeEvent.signedOut) {
+        // User signed out - cleanup
+        _cleanupRealtimeConnection();
+        _subscribedCategories = [];
+        _saveSubscriptions();
+        notifyListeners();
+      }
+    });
+  }
+
+  /// Request notification permissions
+  Future<void> _requestPermissions() async {
+    bool granted = false;
+
+    if (Platform.isAndroid) {
+      final androidImplementation =
+          _localNotifications.resolvePlatformSpecificImplementation<
+              AndroidFlutterLocalNotificationsPlugin>();
+
+      granted = await androidImplementation?.requestNotificationsPermission() ??
+          false;
+    } else if (Platform.isIOS) {
+      final iosImplementation =
+          _localNotifications.resolvePlatformSpecificImplementation<
+              IOSFlutterLocalNotificationsPlugin>();
+
+      granted = await iosImplementation?.requestPermissions(
+            alert: true,
+            badge: true,
+            sound: true,
+          ) ??
+          false;
+    } else {
+      granted = true; // Web and other platforms
+    }
+
+    if (!granted) {
+      _notificationsEnabled = false;
+      await _savePreferences();
+    }
+
+    if (kDebugMode) {
+      print('Notification permissions: ${granted ? 'granted' : 'denied'}');
+    }
+  }
+
+  /// Setup realtime notifications using Supabase realtime
+  Future<void> _setupRealtimeNotifications() async {
+    if (!_notificationsEnabled ||
+        _deviceId == null ||
+        _supabase.auth.currentUser == null) {
+      if (kDebugMode) {
+        print(
+            'Skipping realtime setup - notifications disabled or not authenticated');
+      }
+      return;
+    }
+
+    try {
+      // Clean up existing connection
+      await _cleanupRealtimeConnection();
+
+      // Create a realtime channel for this device
+      _notificationChannel = _supabase.channel('notifications:$_deviceId');
+
+      // Listen for notification events
+      _notificationChannel!.onBroadcast(
+          event: 'notification',
+          callback: (payload) => _handleRealtimeNotification(payload));
+
+      // Listen for connection state
+      _notificationChannel!.onBroadcast(
+          event: '*',
+          callback: (payload) => {print('Realtime system event: $payload')});
+
+      // Subscribe to the channel
+      _notificationChannel!.subscribe();
+
+      // Start heartbeat to keep connection alive
+      _startHeartbeat();
+
+      if (kDebugMode) {
+        print(
+            'Realtime notification channel subscribed for device: $_deviceId');
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        print('Error setting up realtime notifications: $e');
+      }
+      _error = 'Failed to setup realtime notifications: ${e.toString()}';
+      notifyListeners();
+    }
+  }
+
+  /// Cleanup realtime connection
+  Future<void> _cleanupRealtimeConnection() async {
+    _heartbeatTimer?.cancel();
+    _heartbeatTimer = null;
+
+    if (_notificationChannel != null) {
+      try {
+        await _notificationChannel!.unsubscribe();
+      } catch (e) {
+        if (kDebugMode) {
+          print('Error unsubscribing from channel: $e');
+        }
+      }
+      _notificationChannel = null;
+    }
+  }
+
+  /// Start heartbeat to keep realtime connection alive
+  void _startHeartbeat() {
+    _heartbeatTimer?.cancel();
+    _heartbeatTimer = Timer.periodic(const Duration(minutes: 5), (timer) {
+      if (_notificationChannel != null) {
+        try {
+          _notificationChannel!.sendBroadcastMessage(
+            event: 'heartbeat',
+            payload: {
+              'device_id': _deviceId,
+              'timestamp': DateTime.now().toIso8601String(),
+            },
+          );
+        } catch (e) {
+          if (kDebugMode) {
+            print('Error sending heartbeat: $e');
+          }
+        }
+      }
+    });
+  }
+
+  /// Handle realtime notification
+  void _handleRealtimeNotification(Map<String, dynamic> payload) {
+    if (kDebugMode) {
+      print('Received realtime notification: $payload');
+    }
+
+    try {
+      final notificationData = payload['payload'] as Map<String, dynamic>?;
+      if (notificationData != null) {
+        _showLocalNotification(
+          title: notificationData['title'] ?? 'New List Available',
+          body: notificationData['body'] ?? 'Check out a new list in your area',
+          data: notificationData['data'] as Map<String, dynamic>? ?? {},
+        );
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        print('Error handling realtime notification: $e');
+      }
+    }
+  }
+
+  /// Show local notification
+  Future<void> _showLocalNotification({
+    required String title,
+    required String body,
+    Map<String, dynamic>? data,
+  }) async {
+    const AndroidNotificationDetails androidPlatformChannelSpecifics =
+        AndroidNotificationDetails(
+      'neesh_new_lists',
+      'New Lists',
+      channelDescription:
+          'Notifications for new lists in subscribed categories',
+      importance: Importance.high,
+      priority: Priority.high,
+      icon: '@mipmap/ic_launcher',
+      color: Color(0xFF300489),
+      showWhen: true,
+    );
+
+    const DarwinNotificationDetails iOSPlatformChannelSpecifics =
+        DarwinNotificationDetails(
+      presentAlert: true,
+      presentBadge: true,
+      presentSound: true,
+    );
+
+    const NotificationDetails platformChannelSpecifics = NotificationDetails(
+      android: androidPlatformChannelSpecifics,
+      iOS: iOSPlatformChannelSpecifics,
+    );
+
+    final notificationId =
+        DateTime.now().millisecondsSinceEpoch.remainder(100000);
+
+    await _localNotifications.show(
+      notificationId,
+      title,
+      body,
+      platformChannelSpecifics,
+      payload: data != null ? jsonEncode(data) : null,
+    );
+
+    if (kDebugMode) {
+      print('Local notification shown: $title');
+    }
+  }
+
+  /// Handle notification tap
+  void _onNotificationTapped(NotificationResponse response) {
+    if (kDebugMode) {
+      print('Notification tapped: ${response.payload}');
+    }
+
+    if (response.payload != null) {
+      try {
+        final data = jsonDecode(response.payload!);
+        if (data['type'] == 'new_list' && data['list_id'] != null) {
+          _navigateToList(data['list_id']);
+        }
+      } catch (e) {
+        if (kDebugMode) {
+          print('Error parsing notification payload: $e');
+        }
+      }
+    }
+  }
+
+  /// Navigate to list detail (placeholder - implement navigation logic)
+  void _navigateToList(String listId) {
+    // TODO: Implement navigation to list detail screen
+    // This would typically use your app's navigation system
+    if (kDebugMode) {
+      print('Navigate to list: $listId');
+    }
+  }
+
+  /// Subscribe to a category
+  Future<void> subscribeToCategory(String category) async {
+    if (!availableCategories.contains(category)) {
+      throw ArgumentError('Invalid category: $category');
+    }
+
+    if (_subscribedCategories.contains(category)) {
+      return; // Already subscribed
+    }
+
+    try {
+      final userId = _supabase.auth.currentUser?.id;
       if (userId == null) {
         throw Exception('User not authenticated');
       }
 
-      // Load owned lists and shared lists in parallel
-      await Future.wait([
-        _loadOwnedLists(userId),
-        _loadSharedLists(),
-      ]);
-    } catch (e) {
-      _setError('Failed to load lists: ${e.toString()}');
+      if (_deviceId == null) {
+        throw Exception('Device ID not available');
+      }
+
+      // Add to Supabase
+      await _supabase.from('push_subscriptions').insert({
+        'user_id': userId,
+        'category': category,
+        'device_id': _deviceId,
+        'platform': _getPlatform(),
+        'is_active': true,
+      });
+
+      // Update local state
+      _subscribedCategories = [..._subscribedCategories, category];
+      await _saveSubscriptions();
+
+      notifyListeners();
+
       if (kDebugMode) {
-        print('Error loading lists: $e');
+        print('Subscribed to category: $category');
       }
-    } finally {
-      _setLoading(false);
-    }
-  }
-
-  /// Load lists owned by the current user
-  Future<void> _loadOwnedLists(String userId) async {
-    try {
-      // Query all lists owned by the user
-      final listsResponse = await _supabase
-          .from('place_lists')
-          .select()
-          .eq('user_id', userId)
-          .order('created_at', ascending: false);
-
-      final loadedLists = <PlaceList>[];
-
-      // Load detailed data for each list
-      for (final listData in listsResponse) {
-        try {
-          final placeList = await _loadListWithDetails(listData['id']);
-          if (placeList != null) {
-            loadedLists.add(placeList);
-          }
-        } catch (e) {
-          if (kDebugMode) {
-            print('Error loading list ${listData['id']}: $e');
-          }
-          // Continue loading other lists even if one fails
-        }
-      }
-
-      _lists = loadedLists;
     } catch (e) {
-      if (kDebugMode) {
-        print('Error loading owned lists: $e');
-      }
+      _error = 'Failed to subscribe to $category: ${e.toString()}';
+      notifyListeners();
       rethrow;
     }
   }
 
-  /// Load lists shared with the current user
-  Future<void> _loadSharedLists() async {
-    try {
-      final user = _supabase.auth.currentUser;
-      if (user?.email == null) return;
-
-      // Get lists shared with the user's email
-      final sharesResponse = await _supabase.from('shares').select('''
-            list_id,
-            place_lists!inner(*)
-          ''').eq('email', user!.email!);
-
-      final loadedSharedLists = <PlaceList>[];
-
-      for (final shareData in sharesResponse) {
-        try {
-          final listId = shareData['list_id'];
-          final placeList = await _loadListWithDetails(listId);
-          if (placeList != null) {
-            loadedSharedLists.add(placeList);
-          }
-        } catch (e) {
-          if (kDebugMode) {
-            print('Error loading shared list: $e');
-          }
-        }
-      }
-
-      _sharedLists = loadedSharedLists;
-    } catch (e) {
-      if (kDebugMode) {
-        print('Error loading shared lists: $e');
-      }
-      // Don't throw error for shared lists, just log it
+  /// Unsubscribe from a category
+  Future<void> unsubscribeFromCategory(String category) async {
+    if (!_subscribedCategories.contains(category)) {
+      return; // Not subscribed
     }
-  }
 
-  /// Load a complete list with all its details
-  Future<PlaceList?> _loadListWithDetails(String listId) async {
     try {
-      // Get list basic info
-      final listResponse = await _supabase
-          .from('place_lists')
-          .select()
-          .eq('id', listId)
-          .single();
-
-      // Get rating categories for this list
-      final categoriesResponse = await _supabase
-          .from('rating_categories')
-          .select()
-          .eq('list_id', listId)
-          .order('name');
-
-      final ratingCategories = categoriesResponse
-          .map((category) => RatingCategory(
-                id: category['id'],
-                name: category['name'],
-                description: category['description'],
-              ))
-          .toList();
-
-      // Get entries (places) in this list with their ratings
-      final entriesResponse = await _supabase.from('list_entries').select('''
-            *,
-            places!inner(*)
-          ''').eq('list_id', listId).order('created_at');
-
-      final entries = <PlaceEntry>[];
-
-      for (final entryData in entriesResponse) {
-        try {
-          final entryId = entryData['id'];
-          final placeData = entryData['places'];
-
-          // Get ratings for this entry
-          final ratingsResponse = await _supabase
-              .from('rating_values')
-              .select()
-              .eq('entry_id', entryId);
-
-          final ratings = ratingsResponse
-              .map((rating) => RatingValue(
-                    categoryId: rating['category_id'],
-                    value: rating['value'],
-                  ))
-              .toList();
-
-          // Create Place from place data
-          final place = Place(
-            id: placeData['id'],
-            name: placeData['name'],
-            address: placeData['address'],
-            lat: placeData['lat']?.toDouble() ?? 0.0,
-            lng: placeData['lng']?.toDouble() ?? 0.0,
-            image: placeData['image_url'],
-            phone: placeData['phone'],
-          );
-
-          // Create entry
-          final entry = PlaceEntry(
-            place: place,
-            ratings: ratings,
-            notes: entryData['notes'],
-          );
-
-          entries.add(entry);
-        } catch (e) {
-          if (kDebugMode) {
-            print('Error loading entry: $e');
-          }
-          // Continue with other entries
-        }
-      }
-
-      // Create and return the complete list
-      return PlaceList(
-        id: listId,
-        name: listResponse['name'],
-        description: listResponse['description'],
-        entries: entries,
-        ratingCategories: ratingCategories,
-      );
-    } catch (e) {
-      if (kDebugMode) {
-        print('Error loading list details for $listId: $e');
-      }
-      return null;
-    }
-  }
-
-  /// Create a new list
-  Future<PlaceList> createList(String name,
-      [String? description, List<RatingCategory>? ratingCategories]) async {
-    try {
-      _setLoading(true);
-      _clearError();
-
-      final userId = _getCurrentUserId();
+      final userId = _supabase.auth.currentUser?.id;
       if (userId == null) {
         throw Exception('User not authenticated');
       }
 
-      final listId = _uuid.v4();
-
-      // Start a transaction-like approach
-      try {
-        // Insert list into Supabase with is_public defaulting to false
-        await _supabase.from('place_lists').insert({
-          'id': listId,
-          'user_id': userId,
-          'name': name.trim(),
-          'description': description?.trim(),
-          'is_public': false, // New lists start as private
-          'created_at': DateTime.now().toIso8601String(),
-        });
-
-        // Insert rating categories if provided
-        if (ratingCategories != null && ratingCategories.isNotEmpty) {
-          final categoriesData = ratingCategories
-              .map((category) => {
-                    'id': category.id,
-                    'list_id': listId,
-                    'name': category.name.trim(),
-                    'description': category.description?.trim(),
-                    'created_at': DateTime.now().toIso8601String(),
-                  })
-              .toList();
-
-          await _supabase.from('rating_categories').insert(categoriesData);
-        }
-
-        // Create PlaceList object
-        final newList = PlaceList(
-          id: listId,
-          name: name.trim(),
-          description: description?.trim(),
-          entries: [],
-          ratingCategories: ratingCategories ?? [],
-        );
-
-        // Add to local cache
-        _lists.insert(0, newList); // Add to beginning for recency
-
-        if (kDebugMode) {
-          print('Created new list: ${newList.name} (ID: $listId)');
-        }
-
-        return newList;
-      } catch (e) {
-        // If something went wrong, try to cleanup
-        try {
-          await _supabase.from('place_lists').delete().eq('id', listId);
-        } catch (cleanupError) {
-          if (kDebugMode) {
-            print('Failed to cleanup after create error: $cleanupError');
-          }
-        }
-        rethrow;
-      }
-    } catch (e) {
-      _setError('Failed to create list: ${e.toString()}');
-      throw Exception('Failed to create list: ${e.toString()}');
-    } finally {
-      _setLoading(false);
-    }
-  }
-
-  /// Update a list's basic information
-  Future<void> updateList(PlaceList updatedList) async {
-    try {
-      _setLoading(true);
-      _clearError();
-
-      await _supabase.from('place_lists').update({
-        'name': updatedList.name.trim(),
-        'description': updatedList.description?.trim(),
-        'updated_at': DateTime.now().toIso8601String(),
-      }).eq('id', updatedList.id);
-
-      // Update local cache
-      final index = _lists.indexWhere((list) => list.id == updatedList.id);
-      if (index != -1) {
-        _lists[index] = updatedList;
-      }
-    } catch (e) {
-      _setError('Failed to update list: ${e.toString()}');
-      throw Exception('Failed to update list: ${e.toString()}');
-    } finally {
-      _setLoading(false);
-    }
-  }
-
-  /// Delete a list and all its associated data
-  Future<void> deleteList(String listId) async {
-    try {
-      _setLoading(true);
-      _clearError();
-
-      // Supabase should handle cascade deletes via foreign key constraints
-      // This will delete the list and all related data (entries, ratings, etc.)
-      await _supabase.from('place_lists').delete().eq('id', listId);
-
-      // Remove from local cache
-      _lists.removeWhere((list) => list.id == listId);
-      _sharedLists.removeWhere((list) => list.id == listId);
-    } catch (e) {
-      _setError('Failed to delete list: ${e.toString()}');
-      throw Exception('Failed to delete list: ${e.toString()}');
-    } finally {
-      _setLoading(false);
-    }
-  }
-
-  /// Add a rating category to a list
-  Future<void> addRatingCategory(String listId, RatingCategory category) async {
-    try {
-      _setLoading(true);
-      _clearError();
-
-      await _supabase.from('rating_categories').insert({
-        'id': category.id,
-        'list_id': listId,
-        'name': category.name.trim(),
-        'description': category.description?.trim(),
-        'created_at': DateTime.now().toIso8601String(),
-      });
-
-      // Update local cache
-      final index = _lists.indexWhere((list) => list.id == listId);
-      if (index != -1) {
-        final updatedList = _lists[index].addRatingCategory(category);
-        _lists[index] = updatedList;
-      }
-    } catch (e) {
-      _setError('Failed to add rating category: ${e.toString()}');
-      throw Exception('Failed to add rating category: ${e.toString()}');
-    } finally {
-      _setLoading(false);
-    }
-  }
-
-  /// Remove a rating category from a list
-  Future<void> removeRatingCategory(String listId, String categoryId) async {
-    try {
-      _setLoading(true);
-      _clearError();
-
-      // Delete category from Supabase (ratings should cascade delete)
-      await _supabase.from('rating_categories').delete().eq('id', categoryId);
-
-      // Update local cache
-      final index = _lists.indexWhere((list) => list.id == listId);
-      if (index != -1) {
-        final updatedList = _lists[index].removeRatingCategory(categoryId);
-        _lists[index] = updatedList;
-      }
-    } catch (e) {
-      _setError('Failed to remove rating category: ${e.toString()}');
-      throw Exception('Failed to remove rating category: ${e.toString()}');
-    } finally {
-      _setLoading(false);
-    }
-  }
-
-  /// Check if a string is a valid UUID
-  bool _isValidUuid(String id) {
-    final uuidRegex = RegExp(
-        r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$');
-    return uuidRegex.hasMatch(id);
-  }
-
-  /// Get or create a place and return the internal UUID
-  Future<String> _getOrCreatePlaceId(Place place) async {
-    try {
-      // If the place ID is already a UUID, check if it exists
-      if (_isValidUuid(place.id)) {
-        final existingPlace = await _supabase
-            .from('places')
-            .select('id')
-            .eq('id', place.id)
-            .maybeSingle();
-
-        if (existingPlace != null) {
-          return place.id;
-        }
-      } else {
-        // Check if we already have this external place in our database
-        final existingPlace = await _supabase
-            .from('places')
-            .select('id')
-            .eq('external_id', place.id)
-            .maybeSingle();
-
-        if (existingPlace != null) {
-          return existingPlace['id'];
-        }
-      }
-
-      // Place doesn't exist, create it
-      return await _createPlace(place);
-    } catch (e) {
-      throw Exception('Failed to get or create place ID: ${e.toString()}');
-    }
-  }
-
-  /// Create a new place and return its internal UUID
-  Future<String> _createPlace(Place place) async {
-    try {
-      // Generate UUID if needed
-      String internalId = _isValidUuid(place.id) ? place.id : _uuid.v4();
-
-      // Validate required fields
-      if (place.name.trim().isEmpty) {
-        throw Exception('Place name cannot be empty');
-      }
-      if (place.address.trim().isEmpty) {
-        throw Exception('Place address cannot be empty');
-      }
-
-      // Prepare the insert data
-      final insertData = <String, dynamic>{
-        'id': internalId,
-        'name': place.name.trim(),
-        'address': place.address.trim(),
-        'lat': place.lat,
-        'lng': place.lng,
-        'created_at': DateTime.now().toIso8601String(),
-      };
-
-      // Add external_id if the original ID was not a UUID
-      if (!_isValidUuid(place.id)) {
-        insertData['external_id'] = place.id;
-      }
-
-      // Only add optional fields if they have values
-      if (place.image != null && place.image!.trim().isNotEmpty) {
-        insertData['image_url'] = place.image!.trim();
-      }
-      if (place.phone != null && place.phone!.trim().isNotEmpty) {
-        insertData['phone'] = place.phone!.trim();
-      }
-
-      // Insert the place
-      await _supabase.from('places').insert(insertData);
-
-      if (kDebugMode) {
-        print('Successfully created place: ${place.name} with ID: $internalId');
-      }
-
-      return internalId;
-    } catch (e) {
-      if (kDebugMode) {
-        print('Error creating place: $e');
-        print('Place data: ${place.toJson()}');
-      }
-      throw Exception('Failed to create place: ${e.toString()}');
-    }
-  }
-
-  /// Add a place to a list with optional ratings and notes
-  Future<void> addPlaceToList(String listId, Place place,
-      {List<RatingValue>? ratings, String? notes}) async {
-    try {
-      _setLoading(true);
-      _clearError();
-
-      if (kDebugMode) {
-        print('Adding place to list: ${place.name} -> List ID: $listId');
-        print('Original place ID: ${place.id}');
-      }
-
-      // Validate inputs
-      if (listId.trim().isEmpty) {
-        throw Exception('List ID cannot be empty');
-      }
-
-      // Check if the list exists and user has permission
-      final listExists = await _supabase
-          .from('place_lists')
-          .select('id, user_id')
-          .eq('id', listId)
-          .maybeSingle();
-
-      if (listExists == null) {
-        throw Exception('List not found');
-      }
-
-      final currentUserId = _getCurrentUserId();
-      if (currentUserId != listExists['user_id']) {
-        throw Exception('You do not have permission to modify this list');
-      }
-
-      // Get or create the place and get the correct internal UUID
-      final internalPlaceId = await _getOrCreatePlaceId(place);
-
-      if (kDebugMode) {
-        print('Using internal place ID: $internalPlaceId');
-      }
-
-      // Check if place is already in the list (using internal ID)
-      final existingEntry = await _supabase
-          .from('list_entries')
-          .select('id')
-          .eq('list_id', listId)
-          .eq('place_id', internalPlaceId)
-          .maybeSingle();
-
-      if (existingEntry != null) {
-        throw Exception('Place is already in this list');
-      }
-
-      // Create entry using the internal place ID
-      final entryId = _uuid.v4();
-      final entryData = <String, dynamic>{
-        'id': entryId,
-        'list_id': listId,
-        'place_id': internalPlaceId,
-        'created_at': DateTime.now().toIso8601String(),
-      };
-
-      // Only add notes if they have content
-      if (notes != null && notes.trim().isNotEmpty) {
-        entryData['notes'] = notes.trim();
-      }
-
-      await _supabase.from('list_entries').insert(entryData);
-
-      if (kDebugMode) {
-        print('Successfully created list entry with ID: $entryId');
-      }
-
-      // Insert ratings if provided
-      if (ratings != null && ratings.isNotEmpty) {
-        final ratingsData = ratings
-            .where(
-                (rating) => rating.value > 0) // Only include non-zero ratings
-            .map((rating) => {
-                  'id': _uuid.v4(),
-                  'entry_id': entryId,
-                  'category_id': rating.categoryId,
-                  'value': rating.value,
-                  'created_at': DateTime.now().toIso8601String(),
-                })
-            .toList();
-
-        if (ratingsData.isNotEmpty) {
-          await _supabase.from('rating_values').insert(ratingsData);
-
-          if (kDebugMode) {
-            print('Successfully inserted ${ratingsData.length} ratings');
-          }
-        }
-      }
-
-      // Update local cache - create a new Place object with the correct internal ID
-      final placeWithCorrectId = Place(
-        id: internalPlaceId,
-        name: place.name,
-        address: place.address,
-        lat: place.lat,
-        lng: place.lng,
-        image: place.image,
-        phone: place.phone,
-      );
-
-      final index = _lists.indexWhere((list) => list.id == listId);
-      if (index != -1) {
-        final updatedList = _lists[index].addPlace(
-          placeWithCorrectId,
-          ratings: ratings?.where((r) => r.value > 0).toList(),
-          notes: notes?.trim(),
-        );
-        _lists[index] = updatedList;
-
-        if (kDebugMode) {
-          print('Successfully updated local cache');
-        }
-      }
-    } catch (e) {
-      final errorMessage = 'Failed to add place to list: ${e.toString()}';
-      _setError(errorMessage);
-      if (kDebugMode) {
-        print('Error in addPlaceToList: $e');
-        print('Place: ${place.toJson()}');
-        print('List ID: $listId');
-        print('Ratings: ${ratings?.map((r) => r.toJson()).toList()}');
-      }
-      throw Exception(errorMessage);
-    } finally {
-      _setLoading(false);
-    }
-  }
-
-  /// Remove a place from a list
-  Future<void> removePlaceFromList(String listId, String placeId) async {
-    try {
-      _setLoading(true);
-      _clearError();
-
-      // Delete the entry (ratings should cascade delete)
+      // Remove from Supabase
       await _supabase
-          .from('list_entries')
+          .from('push_subscriptions')
           .delete()
-          .eq('list_id', listId)
-          .eq('place_id', placeId);
+          .eq('user_id', userId)
+          .eq('category', category)
+          .eq('device_id', _deviceId ?? '');
 
-      // Update local cache
-      final index = _lists.indexWhere((list) => list.id == listId);
-      if (index != -1) {
-        final updatedList = _lists[index].removePlace(placeId);
-        _lists[index] = updatedList;
+      // Update local state
+      _subscribedCategories =
+          _subscribedCategories.where((c) => c != category).toList();
+      await _saveSubscriptions();
+
+      notifyListeners();
+
+      if (kDebugMode) {
+        print('Unsubscribed from category: $category');
       }
     } catch (e) {
-      _setError('Failed to remove place from list: ${e.toString()}');
-      throw Exception('Failed to remove place from list: ${e.toString()}');
-    } finally {
-      _setLoading(false);
+      _error = 'Failed to unsubscribe from $category: ${e.toString()}';
+      notifyListeners();
+      rethrow;
     }
   }
 
-  /// Update rating for a place in a list
-  Future<void> updatePlaceRating(
-      String listId, String placeId, String categoryId, int rating) async {
-    try {
-      _setLoading(true);
-      _clearError();
-
-      // Find the entry
-      final entryResponse = await _supabase
-          .from('list_entries')
-          .select('id')
-          .eq('list_id', listId)
-          .eq('place_id', placeId)
-          .single();
-
-      final entryId = entryResponse['id'];
-
-      // Check if rating already exists
-      final existingRating = await _supabase
-          .from('rating_values')
-          .select('id')
-          .eq('entry_id', entryId)
-          .eq('category_id', categoryId)
-          .maybeSingle();
-
-      if (existingRating != null) {
-        // Update existing rating
-        await _supabase.from('rating_values').update({
-          'value': rating,
-          'updated_at': DateTime.now().toIso8601String(),
-        }).eq('id', existingRating['id']);
-      } else {
-        // Insert new rating
-        await _supabase.from('rating_values').insert({
-          'id': _uuid.v4(),
-          'entry_id': entryId,
-          'category_id': categoryId,
-          'value': rating,
-          'created_at': DateTime.now().toIso8601String(),
-        });
-      }
-
-      // Update local cache
-      final listIndex = _lists.indexWhere((list) => list.id == listId);
-      if (listIndex != -1) {
-        final updatedList =
-            _lists[listIndex].updateRating(placeId, categoryId, rating);
-        _lists[listIndex] = updatedList;
-      }
-    } catch (e) {
-      _setError('Failed to update rating: ${e.toString()}');
-      throw Exception('Failed to update rating: ${e.toString()}');
-    } finally {
-      _setLoading(false);
+  /// Toggle subscription for a category
+  Future<void> toggleCategorySubscription(String category) async {
+    if (_subscribedCategories.contains(category)) {
+      await unsubscribeFromCategory(category);
+    } else {
+      await subscribeToCategory(category);
     }
   }
 
-  /// Update notes for a place in a list
-  Future<void> updatePlaceNotes(
-      String listId, String placeId, String notes) async {
+  /// Check if subscribed to a category
+  bool isSubscribedToCategory(String category) {
+    return _subscribedCategories.contains(category);
+  }
+
+  /// Load subscriptions from server
+  Future<void> loadSubscriptionsFromServer() async {
     try {
-      _setLoading(true);
-      _clearError();
+      final userId = _supabase.auth.currentUser?.id;
+      if (userId == null) {
+        if (kDebugMode) {
+          print('Cannot load subscriptions - user not authenticated');
+        }
+        return;
+      }
+
+      final response = await _supabase
+          .from('push_subscriptions')
+          .select('category')
+          .eq('user_id', userId)
+          .eq('device_id', _deviceId ?? '')
+          .eq('is_active', true);
+
+      _subscribedCategories =
+          (response as List).map((sub) => sub['category'] as String).toList();
+
+      await _saveSubscriptions();
+      notifyListeners();
+
+      if (kDebugMode) {
+        print(
+            'Loaded ${_subscribedCategories.length} subscriptions from server');
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        print('Error loading subscriptions from server: $e');
+      }
+    }
+  }
+
+  /// Clear all subscriptions
+  Future<void> clearAllSubscriptions() async {
+    try {
+      final userId = _supabase.auth.currentUser?.id;
+      if (userId == null) return;
 
       await _supabase
-          .from('list_entries')
-          .update({
-            'notes': notes.trim(),
-            'updated_at': DateTime.now().toIso8601String(),
-          })
-          .eq('list_id', listId)
-          .eq('place_id', placeId);
+          .from('push_subscriptions')
+          .delete()
+          .eq('user_id', userId)
+          .eq('device_id', _deviceId ?? '');
 
-      // Update local cache
-      final index = _lists.indexWhere((list) => list.id == listId);
-      if (index != -1) {
-        final updatedList = _lists[index].updateNotes(placeId, notes.trim());
-        _lists[index] = updatedList;
-      }
-    } catch (e) {
-      _setError('Failed to update notes: ${e.toString()}');
-      throw Exception('Failed to update notes: ${e.toString()}');
-    } finally {
-      _setLoading(false);
-    }
-  }
+      _subscribedCategories = [];
+      await _saveSubscriptions();
+      notifyListeners();
 
-  /// Share a list with another user by email
-  Future<void> shareListWithUser(String listId, String email) async {
-    try {
-      _setLoading(true);
-      _clearError();
-
-      final sharedBy = _getCurrentUserId();
-      if (sharedBy == null) {
-        throw Exception('User not authenticated');
-      }
-
-      // Check if already shared with this email
-      final existingShare = await _supabase
-          .from('shares')
-          .select('id')
-          .eq('list_id', listId)
-          .eq('email', email.trim().toLowerCase())
-          .maybeSingle();
-
-      if (existingShare != null) {
-        throw Exception('List is already shared with this email');
-      }
-
-      // Insert into shares table
-      await _supabase.from('shares').insert({
-        'id': _uuid.v4(),
-        'list_id': listId,
-        'shared_by': sharedBy,
-        'email': email.trim().toLowerCase(),
-        'created_at': DateTime.now().toIso8601String(),
-      });
-    } catch (e) {
-      _setError('Failed to share list: ${e.toString()}');
-      throw Exception('Failed to share list: ${e.toString()}');
-    } finally {
-      _setLoading(false);
-    }
-  }
-
-  /// Set list visibility (public/private) with notification support
-  Future<void> setListVisibility(String listId, bool isPublic) async {
-    try {
-      _setLoading(true);
-      _clearError();
-
-      final userId = _getCurrentUserId();
-      if (userId == null) {
-        throw Exception('User not authenticated');
-      }
-
-      // Verify ownership
-      final listData = await _supabase
-          .from('place_lists')
-          .select('user_id, is_public')
-          .eq('id', listId)
-          .single();
-
-      if (listData['user_id'] != userId) {
-        throw Exception('You can only modify your own lists');
-      }
-
-      final wasPublic = listData['is_public'] as bool?;
-
-      // Update visibility - this will trigger the database function if becoming public
-      await _supabase.from('place_lists').update({
-        'is_public': isPublic,
-        'updated_at': DateTime.now().toIso8601String(),
-      }).eq('id', listId);
-
-      // Log the visibility change
       if (kDebugMode) {
-        if (isPublic && (wasPublic != true)) {
-          print(
-              'List $listId made public - notifications will be triggered by database trigger');
-        } else if (!isPublic && (wasPublic == true)) {
-          print('List $listId made private');
+        print('Cleared all subscriptions');
+      }
+    } catch (e) {
+      _error = 'Failed to clear subscriptions: ${e.toString()}';
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  /// Save subscriptions to local storage
+  Future<void> _saveSubscriptions() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setStringList(_subscriptionsKey, _subscribedCategories);
+    } catch (e) {
+      if (kDebugMode) {
+        print('Error saving subscriptions: $e');
+      }
+    }
+  }
+
+  /// Load subscriptions from local storage
+  Future<void> _loadSubscriptions() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      _subscribedCategories = prefs.getStringList(_subscriptionsKey) ?? [];
+
+      if (kDebugMode) {
+        print(
+            'Loaded ${_subscribedCategories.length} subscriptions from local storage');
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        print('Error loading subscriptions: $e');
+      }
+    }
+  }
+
+  /// Get platform string
+  String _getPlatform() {
+    if (Platform.isIOS) return 'ios';
+    if (Platform.isAndroid) return 'android';
+    return 'web';
+  }
+
+  /// Enable/disable notifications
+  Future<void> setNotificationsEnabled(bool enabled) async {
+    if (enabled && !_notificationsEnabled) {
+      // Request permissions first
+      await _requestPermissions();
+
+      if (_notificationsEnabled) {
+        // Setup realtime connection
+        if (_supabase.auth.currentUser != null) {
+          await _setupRealtimeNotifications();
+        }
+
+        // Re-enable subscriptions in database
+        final userId = _supabase.auth.currentUser?.id;
+        if (userId != null) {
+          await _supabase
+              .from('push_subscriptions')
+              .update({'is_active': true})
+              .eq('user_id', userId)
+              .eq('device_id', _deviceId ?? '');
         }
       }
-    } catch (e) {
-      _setError('Failed to update list visibility: ${e.toString()}');
-      throw Exception('Failed to update list visibility: ${e.toString()}');
-    } finally {
-      _setLoading(false);
+    } else if (!enabled) {
+      // Disable all subscriptions
+      final userId = _supabase.auth.currentUser?.id;
+      if (userId != null) {
+        await _supabase
+            .from('push_subscriptions')
+            .update({'is_active': false})
+            .eq('user_id', userId)
+            .eq('device_id', _deviceId ?? '');
+      }
+
+      // Close realtime connection
+      await _cleanupRealtimeConnection();
+    }
+
+    _notificationsEnabled = enabled;
+    await _savePreferences();
+    notifyListeners();
+
+    if (kDebugMode) {
+      print('Notifications ${enabled ? 'enabled' : 'disabled'}');
     }
   }
 
-  /// Get lists that contain a specific place
-  List<PlaceList> getListsWithPlace(String placeId) {
-    return _lists
-        .where((list) => list.entries.any((entry) => entry.place.id == placeId))
-        .toList();
+  /// Get notification statistics
+  Future<Map<String, dynamic>> getNotificationStats() async {
+    try {
+      final userId = _supabase.auth.currentUser?.id;
+      if (userId == null) return {};
+
+      // Get subscription count by category
+      final subscriptions = await _supabase
+          .from('push_subscriptions')
+          .select('category')
+          .eq('user_id', userId)
+          .eq('device_id', _deviceId ?? '')
+          .eq('is_active', true);
+
+      // Get recent notification count
+      final weekAgo =
+          DateTime.now().subtract(const Duration(days: 7)).toIso8601String();
+      final monthAgo =
+          DateTime.now().subtract(const Duration(days: 30)).toIso8601String();
+
+      final recentNotifications = await _supabase
+          .from('notification_history')
+          .select('sent_at')
+          .eq('device_id', _deviceId ?? '')
+          .gte('sent_at', weekAgo);
+
+      final monthlyNotifications = await _supabase
+          .from('notification_history')
+          .select('sent_at')
+          .eq('device_id', _deviceId ?? '')
+          .gte('sent_at', monthAgo);
+
+      return {
+        'total_subscriptions': subscriptions.length,
+        'subscribed_categories': _subscribedCategories,
+        'notifications_last_week': recentNotifications.length,
+        'notifications_last_month': monthlyNotifications.length,
+        'notifications_enabled': _notificationsEnabled,
+      };
+    } catch (e) {
+      if (kDebugMode) {
+        print('Error getting notification stats: $e');
+      }
+      return {};
+    }
   }
 
-  /// Get the current user ID
-  String? _getCurrentUserId() {
-    return _supabase.auth.currentUser?.id;
-  }
+  /// Test notification (for debugging)
+  Future<void> sendTestNotification() async {
+    if (!_notificationsEnabled) {
+      throw Exception('Notifications are not enabled');
+    }
 
-  /// Set loading state
-  void _setLoading(bool loading) {
-    _isLoading = loading;
-    notifyListeners();
-  }
+    await _showLocalNotification(
+      title: 'Test Notification',
+      body: 'This is a test notification from NEESH! 🎉',
+      data: {
+        'type': 'test',
+        'timestamp': DateTime.now().toIso8601String(),
+      },
+    );
 
-  /// Set error message
-  void _setError(String error) {
-    _error = error;
-    notifyListeners();
+    if (kDebugMode) {
+      print('Test notification sent');
+    }
   }
 
   /// Clear error message
-  void _clearError() {
+  void clearError() {
     _error = null;
+    notifyListeners();
   }
 
-  /// Retry last failed operation
-  Future<void> retry() async {
-    _clearError();
-    await loadLists();
+  @override
+  void dispose() {
+    _cleanupRealtimeConnection();
+    _authSubscription?.cancel();
+    super.dispose();
   }
 }

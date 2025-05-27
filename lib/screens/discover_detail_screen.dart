@@ -266,12 +266,6 @@ class _DiscoverDetailScreenState extends State<DiscoverDetailScreen> {
                       children: [
                         // User info and rating
                         _buildUserInfo(),
-
-                        const SizedBox(height: 16),
-
-                        // Voting section
-                        _buildVotingSection(),
-
                         const SizedBox(height: 16),
 
                         // Description
@@ -282,6 +276,11 @@ class _DiscoverDetailScreenState extends State<DiscoverDetailScreen> {
                           ),
                           const SizedBox(height: 16),
                         ],
+
+                        // Voting section
+                        _buildVotingSection(),
+
+                        const SizedBox(height: 16),
 
                         // List stats
                         _buildListStats(),
@@ -311,16 +310,34 @@ class _DiscoverDetailScreenState extends State<DiscoverDetailScreen> {
 
   Widget _buildUserInfo() {
     return Row(
+      spacing: 10,
       children: [
-        const Icon(Icons.person, size: 16, color: Colors.grey),
-        const SizedBox(width: 8),
-        Text(
-          _currentList.userName,
-          style: const TextStyle(
-            color: Colors.grey,
-            fontWeight: FontWeight.bold,
+        CircleAvatar(
+            backgroundColor: Theme.of(context).colorScheme.primary,
+            child: Text(
+              _currentList.userName.split('')[0].toString(),
+              style: TextStyle(color: Colors.white),
+            )),
+        Expanded(
+            child:
+                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(
+            _currentList.userName,
+            style: const TextStyle(
+              color: Colors.grey,
+              fontWeight: FontWeight.bold,
+            ),
           ),
-        ),
+          Text(
+            '312 Lists',
+            textAlign: TextAlign.left,
+          )
+        ])),
+        TextButton(
+            onPressed: () {},
+            style: TextButton.styleFrom(
+                foregroundColor: Colors.white, backgroundColor: Colors.red),
+            child: Text('Subscribe'))
       ],
     );
   }

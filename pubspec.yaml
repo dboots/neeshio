@@ -44,6 +44,7 @@ dependencies:
   geolocator: ^13.0.4
   permission_handler:
   cached_network_image:
+  flutter_local_notifications:
 
 dev_dependencies:
   flutter_test:
