@@ -20,7 +20,8 @@ class PublicUserProfileScreen extends StatefulWidget {
   });
 
   @override
-  State<PublicUserProfileScreen> createState() => _PublicUserProfileScreenState();
+  State<PublicUserProfileScreen> createState() =>
+      _PublicUserProfileScreenState();
 }
 
 class _PublicUserProfileScreenState extends State<PublicUserProfileScreen> {
@@ -28,16 +29,17 @@ class _PublicUserProfileScreenState extends State<PublicUserProfileScreen> {
   bool _isFollowing = false;
   bool _isSubscribed = false;
   String? _error;
-  
+
   // User profile data
   Map<String, dynamic>? _userProfile;
   List<PlaceList> _publicLists = [];
   Map<String, dynamic> _profileStats = {};
-  
+
   // Subscription data
-  double _subscriptionPrice = 2.99; // Default price, could be fetched from profile
+  double _subscriptionPrice =
+      2.99; // Default price, could be fetched from profile
   bool _isProcessingSubscription = false;
-  
+
   @override
   void initState() {
     super.initState();
@@ -51,11 +53,13 @@ class _PublicUserProfileScreenState extends State<PublicUserProfileScreen> {
     });
 
     try {
-      final userProfileService = Provider.of<UserProfileService>(context, listen: false);
-      
+      final userProfileService =
+          Provider.of<UserProfileService>(context, listen: false);
+
       // Load user profile data
-      final profileData = await userProfileService.getPublicUserProfile(widget.userId);
-      
+      final profileData =
+          await userProfileService.getPublicUserProfile(widget.userId);
+
       if (profileData != null) {
         setState(() {
           _userProfile = profileData['profile'];
@@ -63,7 +67,8 @@ class _PublicUserProfileScreenState extends State<PublicUserProfileScreen> {
           _profileStats = profileData['stats'] as Map<String, dynamic>;
           _isFollowing = profileData['is_following'] as bool;
           _isSubscribed = profileData['is_subscribed'] as bool? ?? false;
-          _subscriptionPrice = profileData['subscription_price'] as double? ?? 2.99;
+          _subscriptionPrice =
+              profileData['subscription_price'] as double? ?? 2.99;
         });
       } else {
         setState(() {
@@ -81,18 +86,57 @@ class _PublicUserProfileScreenState extends State<PublicUserProfileScreen> {
     }
   }
 
-  Future<void> _toggleFollow() async {
+  Future<void> _handleSubscription() async {
+    if (_isSubscribed) {
+      _showUnsubscribeConfirmation();
+    } else {
+      _showSubscriptionDialog();
+    }
+  }
+
+  Future<void> _handleFollow() async {
     final authService = Provider.of<AuthService>(context, listen: false);
-    
+
     if (!authService.isAuthenticated) {
       _showSignInRequired();
       return;
     }
 
-    if (_isSubscribed) {
-      _showUnsubscribeConfirmation();
-    } else {
-      _showSubscriptionDialog();
+    try {
+      final userProfileService =
+          Provider.of<UserProfileService>(context, listen: false);
+
+      if (_isFollowing) {
+        await userProfileService.unfollowUser(widget.userId);
+      } else {
+        await userProfileService.followUser(widget.userId);
+      }
+
+      setState(() {
+        _isFollowing = !_isFollowing;
+        // Update follower count in stats
+        final currentFollowers = _profileStats['followers_count'] as int? ?? 0;
+        _profileStats['followers_count'] =
+            _isFollowing ? currentFollowers + 1 : currentFollowers - 1;
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(_isFollowing ? 'Following user' : 'Unfollowed user'),
+            backgroundColor: _isFollowing ? Colors.green : Colors.orange,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: ${e.toString()}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
 
@@ -105,7 +149,8 @@ class _PublicUserProfileScreenState extends State<PublicUserProfileScreen> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Subscribe to ${_userProfile?['name'] ?? 'this creator'} for exclusive benefits:'),
+            Text(
+                'Subscribe to ${_userProfile?['name'] ?? 'this creator'} for exclusive benefits:'),
             const SizedBox(height: 16),
             const Row(
               children: [
@@ -117,7 +162,8 @@ class _PublicUserProfileScreenState extends State<PublicUserProfileScreen> {
             const SizedBox(height: 8),
             const Row(
               children: [
-                Icon(Icons.notification_important, color: Colors.blue, size: 20),
+                Icon(Icons.notification_important,
+                    color: Colors.blue, size: 20),
                 SizedBox(width: 8),
                 Text('Early access to new places'),
               ],
@@ -145,7 +191,7 @@ class _PublicUserProfileScreenState extends State<PublicUserProfileScreen> {
                     style: TextStyle(fontWeight: FontWeight.w500),
                   ),
                   Text(
-                    '\${_subscriptionPrice.toStringAsFixed(2)}/month',
+                    '\$${_subscriptionPrice.toStringAsFixed(2)}/month',
                     style: const TextStyle(
                       fontSize: 18,
                       fontWeight: FontWeight.bold,
@@ -171,7 +217,8 @@ class _PublicUserProfileScreenState extends State<PublicUserProfileScreen> {
                 ? const SizedBox(
                     width: 20,
                     height: 20,
-                    child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                    child: CircularProgressIndicator(
+                        color: Colors.white, strokeWidth: 2),
                   )
                 : const Text('Subscribe Now'),
           ),
@@ -188,7 +235,8 @@ class _PublicUserProfileScreenState extends State<PublicUserProfileScreen> {
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text('Are you sure you want to cancel your subscription to ${_userProfile?['name'] ?? 'this creator'}?'),
+            Text(
+                'Are you sure you want to cancel your subscription to ${_userProfile?['name'] ?? 'this creator'}?'),
             const SizedBox(height: 16),
             const Text(
               'You will lose access to:',
@@ -236,7 +284,8 @@ class _PublicUserProfileScreenState extends State<PublicUserProfileScreen> {
                 ? const SizedBox(
                     width: 20,
                     height: 20,
-                    child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                    child: CircularProgressIndicator(
+                        color: Colors.white, strokeWidth: 2),
                   )
                 : const Text('Cancel Subscription'),
           ),
@@ -253,10 +302,12 @@ class _PublicUserProfileScreenState extends State<PublicUserProfileScreen> {
     try {
       // Simulate payment processing - in a real app, integrate with Stripe, PayPal, etc.
       await Future.delayed(const Duration(seconds: 2));
-      
-      final userProfileService = Provider.of<UserProfileService>(context, listen: false);
-      await userProfileService.subscribeToUser(widget.userId, _subscriptionPrice);
-      
+
+      final userProfileService =
+          Provider.of<UserProfileService>(context, listen: false);
+      await userProfileService.subscribeToUser(
+          widget.userId, _subscriptionPrice);
+
       setState(() {
         _isSubscribed = true;
         _isProcessingSubscription = false;
@@ -266,7 +317,8 @@ class _PublicUserProfileScreenState extends State<PublicUserProfileScreen> {
         Navigator.pop(context); // Close dialog
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Successfully subscribed to ${_userProfile?['name']}!'),
+            content:
+                Text('Successfully subscribed to ${_userProfile?['name']}!'),
             backgroundColor: Colors.green,
             action: SnackBarAction(
               label: 'View Benefits',
@@ -282,7 +334,7 @@ class _PublicUserProfileScreenState extends State<PublicUserProfileScreen> {
       setState(() {
         _isProcessingSubscription = false;
       });
-      
+
       if (mounted) {
         Navigator.pop(context); // Close dialog
         ScaffoldMessenger.of(context).showSnackBar(
@@ -301,9 +353,10 @@ class _PublicUserProfileScreenState extends State<PublicUserProfileScreen> {
     });
 
     try {
-      final userProfileService = Provider.of<UserProfileService>(context, listen: false);
+      final userProfileService =
+          Provider.of<UserProfileService>(context, listen: false);
       await userProfileService.unsubscribeFromUser(widget.userId);
-      
+
       setState(() {
         _isSubscribed = false;
         _isProcessingSubscription = false;
@@ -322,56 +375,12 @@ class _PublicUserProfileScreenState extends State<PublicUserProfileScreen> {
       setState(() {
         _isProcessingSubscription = false;
       });
-      
+
       if (mounted) {
         Navigator.pop(context); // Close dialog
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Failed to cancel subscription: ${e.toString()}'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    }
-  }
-    final authService = Provider.of<AuthService>(context, listen: false);
-    
-    if (!authService.isAuthenticated) {
-      _showSignInRequired();
-      return;
-    }
-
-    try {
-      final userProfileService = Provider.of<UserProfileService>(context, listen: false);
-      
-      if (_isFollowing) {
-        await userProfileService.unfollowUser(widget.userId);
-      } else {
-        await userProfileService.followUser(widget.userId);
-      }
-      
-      setState(() {
-        _isFollowing = !_isFollowing;
-        // Update follower count in stats
-        final currentFollowers = _profileStats['followers_count'] as int? ?? 0;
-        _profileStats['followers_count'] = _isFollowing 
-            ? currentFollowers + 1 
-            : currentFollowers - 1;
-      });
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(_isFollowing ? 'Following user' : 'Unfollowed user'),
-            backgroundColor: _isFollowing ? Colors.green : Colors.orange,
-          ),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error: ${e.toString()}'),
             backgroundColor: Colors.red,
           ),
         );
@@ -409,12 +418,12 @@ class _PublicUserProfileScreenState extends State<PublicUserProfileScreen> {
 
   String _formatJoinDate(String? createdAt) {
     if (createdAt == null) return 'Unknown';
-    
+
     try {
       final date = DateTime.parse(createdAt);
       final now = DateTime.now();
       final difference = now.difference(date);
-      
+
       if (difference.inDays > 365) {
         final years = (difference.inDays / 365).floor();
         return 'Joined ${years} year${years > 1 ? 's' : ''} ago';
@@ -436,8 +445,9 @@ class _PublicUserProfileScreenState extends State<PublicUserProfileScreen> {
     final bio = _userProfile?['bio'] as String?;
     final avatarUrl = _userProfile?['avatar_url'] as String?;
     final joinDate = _userProfile?['created_at'] as String?;
-    
-    final currentUserId = Provider.of<AuthService>(context, listen: false).user?.id;
+
+    final currentUserId =
+        Provider.of<AuthService>(context, listen: false).user?.id;
     final isOwnProfile = currentUserId == widget.userId;
 
     return Container(
@@ -514,22 +524,22 @@ class _PublicUserProfileScreenState extends State<PublicUserProfileScreen> {
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
               _buildStatColumn(
-                'Lists', 
+                'Lists',
                 '${_profileStats['public_lists_count'] ?? 0}',
                 Icons.list,
               ),
               _buildStatColumn(
-                'Places', 
+                'Places',
                 '${_profileStats['total_places_count'] ?? 0}',
                 Icons.place,
               ),
               _buildStatColumn(
-                'Followers', 
+                'Followers',
                 '${_profileStats['followers_count'] ?? 0}',
                 Icons.people,
               ),
               _buildStatColumn(
-                'Following', 
+                'Following',
                 '${_profileStats['following_count'] ?? 0}',
                 Icons.person_add,
               ),
@@ -545,12 +555,16 @@ class _PublicUserProfileScreenState extends State<PublicUserProfileScreen> {
                 // Follow button
                 Expanded(
                   child: OutlinedButton.icon(
-                    onPressed: _toggleFollow,
-                    icon: Icon(_isFollowing ? Icons.person_remove : Icons.person_add),
+                    onPressed: _handleFollow,
+                    icon: Icon(
+                        _isFollowing ? Icons.person_remove : Icons.person_add),
                     label: Text(_isFollowing ? 'Unfollow' : 'Follow'),
                     style: OutlinedButton.styleFrom(
-                      foregroundColor: _isFollowing ? Colors.grey[600] : Colors.white,
-                      side: BorderSide(color: _isFollowing ? Colors.grey[600]! : Colors.white),
+                      foregroundColor:
+                          _isFollowing ? Colors.grey[600] : Colors.white,
+                      side: BorderSide(
+                          color:
+                              _isFollowing ? Colors.grey[600]! : Colors.white),
                       padding: const EdgeInsets.symmetric(vertical: 12),
                     ),
                   ),
@@ -563,8 +577,11 @@ class _PublicUserProfileScreenState extends State<PublicUserProfileScreen> {
                     icon: Icon(_isSubscribed ? Icons.star : Icons.star_border),
                     label: Text(_isSubscribed ? 'Subscribed' : 'Subscribe'),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: _isSubscribed ? Colors.amber : Colors.white,
-                      foregroundColor: _isSubscribed ? Colors.white : Theme.of(context).colorScheme.primary,
+                      backgroundColor:
+                          _isSubscribed ? Colors.amber : Colors.white,
+                      foregroundColor: _isSubscribed
+                          ? Colors.white
+                          : Theme.of(context).colorScheme.primary,
                       padding: const EdgeInsets.symmetric(vertical: 12),
                     ),
                   ),
@@ -576,7 +593,7 @@ class _PublicUserProfileScreenState extends State<PublicUserProfileScreen> {
             if (!_isSubscribed) ...[
               Center(
                 child: Text(
-                  '\${_subscriptionPrice.toStringAsFixed(2)}/month',
+                  '\$${_subscriptionPrice.toStringAsFixed(2)}/month',
                   style: const TextStyle(
                     color: Colors.white70,
                     fontSize: 14,
@@ -586,20 +603,21 @@ class _PublicUserProfileScreenState extends State<PublicUserProfileScreen> {
               ),
             ] else ...[
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                 decoration: BoxDecoration(
                   color: Colors.amber.withOpacity(0.2),
                   borderRadius: BorderRadius.circular(16),
                   border: Border.all(color: Colors.amber),
                 ),
-                child: Row(
+                child: const Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(Icons.star, color: Colors.amber, size: 16),
-                    const SizedBox(width: 4),
+                    Icon(Icons.star, color: Colors.amber, size: 16),
+                    SizedBox(width: 4),
                     Text(
                       'Premium Subscriber',
-                      style: const TextStyle(
+                      style: TextStyle(
                         color: Colors.amber,
                         fontSize: 12,
                         fontWeight: FontWeight.bold,
@@ -678,8 +696,8 @@ class _PublicUserProfileScreenState extends State<PublicUserProfileScreen> {
           child: Text(
             'Public Lists (${_publicLists.length})',
             style: Theme.of(context).textTheme.titleLarge?.copyWith(
-              fontWeight: FontWeight.bold,
-            ),
+                  fontWeight: FontWeight.bold,
+                ),
           ),
         ),
         ListView.builder(
@@ -740,17 +758,19 @@ class _PublicUserProfileScreenState extends State<PublicUserProfileScreen> {
                       children: [
                         Text(
                           list.name,
-                          style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.bold,
-                          ),
+                          style:
+                              Theme.of(context).textTheme.titleMedium?.copyWith(
+                                    fontWeight: FontWeight.bold,
+                                  ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
                         Text(
                           _getListSummary(list),
-                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: Colors.grey[600],
-                          ),
+                          style:
+                              Theme.of(context).textTheme.bodySmall?.copyWith(
+                                    color: Colors.grey[600],
+                                  ),
                         ),
                       ],
                     ),
@@ -831,7 +851,9 @@ class _PublicUserProfileScreenState extends State<PublicUserProfileScreen> {
                         category.name,
                         style: TextStyle(
                           fontSize: 10,
-                          color: Theme.of(context).colorScheme.onSecondaryContainer,
+                          color: Theme.of(context)
+                              .colorScheme
+                              .onSecondaryContainer,
                         ),
                       ),
                     );
@@ -881,7 +903,8 @@ class _PublicUserProfileScreenState extends State<PublicUserProfileScreen> {
 
   String _getListSummary(PlaceList list) {
     final placesCount = list.entries.length;
-    final ratedPlacesCount = list.entries.where((entry) => entry.ratings.isNotEmpty).length;
+    final ratedPlacesCount =
+        list.entries.where((entry) => entry.ratings.isNotEmpty).length;
     final categoriesCount = list.ratingCategories.length;
 
     final buffer = StringBuffer();
@@ -895,7 +918,8 @@ class _PublicUserProfileScreenState extends State<PublicUserProfileScreen> {
     }
 
     if (categoriesCount > 0) {
-      buffer.write(' • $categoriesCount rating categor${categoriesCount == 1 ? 'y' : 'ies'}');
+      buffer.write(
+          ' • $categoriesCount rating categor${categoriesCount == 1 ? 'y' : 'ies'}');
     }
 
     if (ratedPlacesCount > 0) {
@@ -910,10 +934,11 @@ class _PublicUserProfileScreenState extends State<PublicUserProfileScreen> {
   }
 
   double _calculateAverageRating(PlaceList list) {
-    final ratedEntries = list.entries.where((entry) => entry.ratings.isNotEmpty).toList();
-    
+    final ratedEntries =
+        list.entries.where((entry) => entry.ratings.isNotEmpty).toList();
+
     if (ratedEntries.isEmpty) return 0.0;
-    
+
     double totalRating = 0.0;
     for (final entry in ratedEntries) {
       final averageRating = entry.getAverageRating();
@@ -921,7 +946,7 @@ class _PublicUserProfileScreenState extends State<PublicUserProfileScreen> {
         totalRating += averageRating;
       }
     }
-    
+
     return totalRating / ratedEntries.length;
   }
 
@@ -969,18 +994,22 @@ class _PublicUserProfileScreenState extends State<PublicUserProfileScreen> {
                         const SizedBox(height: 16),
                         Text(
                           'Error',
-                          style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                            fontWeight: FontWeight.bold,
-                            color: Colors.red[600],
-                          ),
+                          style: Theme.of(context)
+                              .textTheme
+                              .headlineSmall
+                              ?.copyWith(
+                                fontWeight: FontWeight.bold,
+                                color: Colors.red[600],
+                              ),
                         ),
                         const SizedBox(height: 8),
                         Text(
                           _error!,
                           textAlign: TextAlign.center,
-                          style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                            color: Colors.red[600],
-                          ),
+                          style:
+                              Theme.of(context).textTheme.bodyLarge?.copyWith(
+                                    color: Colors.red[600],
+                                  ),
                         ),
                         const SizedBox(height: 24),
                         ElevatedButton.icon(
