@@ -100,13 +100,13 @@ class CategorySection extends StatelessWidget {
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
           child: Row(
+            spacing: 8,
             children: [
               Icon(
                 _getCategoryIcon(categoryName),
                 color: _getCategoryColor(categoryName),
                 size: 20,
               ),
-              const SizedBox(width: 8),
               Text(
                 categoryName,
                 style: const TextStyle(
@@ -116,10 +116,11 @@ class CategorySection extends StatelessWidget {
               ),
               const Spacer(),
               TextButton(
-                onPressed: () {
-                  // TODO: Navigate to filtered view for this category
-                },
-                child: const Text('See all'),
+                child: Row(spacing: 4, children: [
+                  Icon(Icons.favorite, color: Colors.red),
+                  Text('Follow'),
+                ]),
+                onPressed: () {},
               ),
             ],
           ),

@@ -282,11 +282,6 @@ class _DiscoverDetailScreenState extends State<DiscoverDetailScreen> {
 
                         const SizedBox(height: 16),
 
-                        // List stats
-                        _buildListStats(),
-
-                        const SizedBox(height: 16),
-
                         // Rating categories
                         if (_currentList.categories != null &&
                             _currentList.categories!.isNotEmpty) ...[
@@ -333,11 +328,21 @@ class _DiscoverDetailScreenState extends State<DiscoverDetailScreen> {
             textAlign: TextAlign.left,
           )
         ])),
-        TextButton(
+        IconButton(
+            padding: EdgeInsets.all(7),
+            constraints: BoxConstraints(),
             onPressed: () {},
             style: TextButton.styleFrom(
                 foregroundColor: Colors.white, backgroundColor: Colors.red),
-            child: Text('Subscribe'))
+            iconSize: 18,
+            icon: const Icon(Icons.favorite)),
+        TextButton(
+            onPressed: () {},
+            style: TextButton.styleFrom(
+                foregroundColor: Colors.white,
+                backgroundColor: Theme.of(context).colorScheme.primary),
+            child: Text('Subscribe')),
+        Text('\$1.49')
       ],
     );
   }
@@ -441,62 +446,6 @@ class _DiscoverDetailScreenState extends State<DiscoverDetailScreen> {
             color: isSelected ? color : Colors.grey[300]!,
             width: 1,
           ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildListStats() {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-      children: [
-        _buildStatCard(
-          icon: Icons.place,
-          value: '${_currentList.placeCount}',
-          label: 'Places',
-        ),
-        _buildStatCard(
-          icon: Icons.category,
-          value: '${_currentList.categoryCount}',
-          label: 'Categories',
-        ),
-        _buildStatCard(
-          icon: Icons.near_me,
-          value: _currentList.getFormattedDistance(),
-          label: 'Away',
-        ),
-      ],
-    );
-  }
-
-  Widget _buildStatCard({
-    required IconData icon,
-    required String value,
-    required String label,
-  }) {
-    return Card(
-      elevation: 2,
-      child: Padding(
-        padding: const EdgeInsets.all(12.0),
-        child: Column(
-          children: [
-            Icon(icon, size: 24, color: Theme.of(context).colorScheme.primary),
-            const SizedBox(height: 8),
-            Text(
-              value,
-              style: const TextStyle(
-                fontWeight: FontWeight.bold,
-                fontSize: 18,
-              ),
-            ),
-            Text(
-              label,
-              style: const TextStyle(
-                fontSize: 12,
-                color: Colors.grey,
-              ),
-            ),
-          ],
         ),
       ),
     );
