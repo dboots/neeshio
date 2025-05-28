@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:neesh/widgets/map_dialogs.dart';
+import 'package:neesh/widgets/map_widgets.dart';
 import 'package:provider/provider.dart';
 import 'package:custom_info_window/custom_info_window.dart';
 
@@ -9,10 +11,6 @@ import '../services/place_list_service.dart';
 import '../widgets/place_list_drawer.dart';
 import '../widgets/location_change_dialog.dart';
 
-// New imports for refactored code
-import '../widgets/map_banners.dart';
-import '../widgets/map_buttons.dart';
-import '../widgets/map_dialogs.dart';
 import '../services/place_utils.dart';
 import '../services/map_search_service.dart';
 
@@ -115,7 +113,7 @@ class _MapScreenState extends State<MapScreen>
 
     // Create basic markers from offices
     final markers = <Marker>{};
-    
+
     for (final office in _locations!.offices) {
       final marker = Marker(
         markerId: MarkerId(office.id),
