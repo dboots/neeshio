@@ -1,14 +1,17 @@
+// lib/main.dart - Updated providers section
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'screens/auth_wrapper.dart';
 import 'screens/notification_settings_screen.dart';
+import 'screens/public_user_profile_screen.dart';
 import 'services/auth_service.dart';
 import 'services/place_list_service.dart';
 import 'services/discover_service.dart';
 import 'services/marker_service.dart';
 import 'services/location_service.dart';
+import 'services/user_profile_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -61,6 +64,18 @@ class MyApp extends StatelessWidget {
           create: (_) => AuthService(),
         ),
 
+        // User profile service - depends on auth state
+        ChangeNotifierProxyProvider<AuthService, UserProfileService>(
+          create: (_) => UserProfileService(),
+          update: (context, authService, userProfileService) {
+            // Clear cache when user signs out
+            if (!authService.isAuthenticated && userProfileService != null) {
+              userProfileService.clearProfileCache();
+            }
+            return userProfileService ?? UserProfileService();
+          },
+        ),
+
         // Place list service - depends on auth state
         ChangeNotifierProxyProvider<AuthService, PlaceListService>(
           create: (_) => PlaceListService(),
@@ -111,6 +126,29 @@ class MyApp extends StatelessWidget {
               ),
             ),
             home: const AuthWrapper(),
+            // Add routes for direct navigation
+            routes: {
+              '/profile': (context) {
+                // Extract userId from route arguments
+                final args = ModalRoute.of(context)?.settings.arguments
+                    as Map<String, dynamic>?;
+                final userId = args?['userId'] as String?;
+                final userName = args?['userName'] as String?;
+
+                if (userId != null) {
+                  return PublicUserProfileScreen(
+                    userId: userId,
+                    userName: userName,
+                  );
+                } else {
+                  return const Scaffold(
+                    body: Center(
+                      child: Text('Invalid user profile'),
+                    ),
+                  );
+                }
+              },
+            },
             // Add error handling for navigation
             builder: (context, widget) {
               // Add global error boundary
@@ -193,6 +231,9 @@ extension ContextExtensions on BuildContext {
   /// Get the current location service
   LocationService get location => read<LocationService>();
 
+  /// Get the current user profile service
+  UserProfileService get userProfiles => read<UserProfileService>();
+
   /// Check if user is authenticated
   bool get isAuthenticated => auth.isAuthenticated;
 
@@ -232,6 +273,18 @@ extension ContextExtensions on BuildContext {
       MaterialPageRoute(
         builder: (context) => const NotificationSettingsScreen(),
       ),
+    );
+  }
+
+  /// Navigate to user profile
+  void navigateToUserProfile(String userId, {String? userName}) {
+    Navigator.pushNamed(
+      this,
+      '/profile',
+      arguments: {
+        'userId': userId,
+        'userName': userName,
+      },
     );
   }
 }

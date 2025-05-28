@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:neesh/utils/user_profile_navigation.dart';
 import 'package:provider/provider.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
@@ -307,42 +308,75 @@ class _DiscoverDetailScreenState extends State<DiscoverDetailScreen> {
     return Row(
       spacing: 10,
       children: [
-        CircleAvatar(
-            backgroundColor: Theme.of(context).colorScheme.primary,
-            child: Text(
-              _currentList.userName.split('')[0].toString(),
-              style: TextStyle(color: Colors.white),
-            )),
+        // Clickable user avatar
+        UserProfileNavigation.createUserAvatar(
+          context: context,
+          userId: _currentList.userId,
+          userName: _currentList.userName,
+          avatarUrl: null, // You could add avatar URL to NearbyList model
+          radius: 24,
+        ),
         Expanded(
-            child:
-                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(
-            _currentList.userName,
-            style: const TextStyle(
-              color: Colors.grey,
-              fontWeight: FontWeight.bold,
-            ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Clickable user name
+              UserProfileNavigation.createUserProfileTap(
+                context: context,
+                userId: _currentList.userId,
+                userName: _currentList.userName,
+                child: Text(
+                  _currentList.userName,
+                  style: const TextStyle(
+                    color: Colors.grey,
+                    fontWeight: FontWeight.bold,
+                    decoration: TextDecoration.underline,
+                    decorationColor: Colors.grey,
+                  ),
+                ),
+              ),
+              const Text(
+                '312 Lists', // This could be dynamic from user stats
+                textAlign: TextAlign.left,
+              ),
+            ],
           ),
-          Text(
-            '312 Lists',
-            textAlign: TextAlign.left,
-          )
-        ])),
+        ),
+        // Follow button
         IconButton(
-            padding: EdgeInsets.all(7),
-            constraints: BoxConstraints(),
-            onPressed: () {},
-            style: TextButton.styleFrom(
-                foregroundColor: Colors.white, backgroundColor: Colors.red),
-            iconSize: 18,
-            icon: const Icon(Icons.favorite)),
+          padding: const EdgeInsets.all(7),
+          constraints: const BoxConstraints(),
+          onPressed: () {
+            // This could integrate with user following functionality
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                  content: Text('Follow functionality coming soon!')),
+            );
+          },
+          style: TextButton.styleFrom(
+            foregroundColor: Colors.white,
+            backgroundColor: Colors.red,
+          ),
+          iconSize: 18,
+          icon: const Icon(Icons.favorite),
+        ),
+        // Subscribe button
         TextButton(
-            onPressed: () {},
-            style: TextButton.styleFrom(
-                foregroundColor: Colors.white,
-                backgroundColor: Theme.of(context).colorScheme.primary),
-            child: Text('Subscribe')),
-        Text('\$1.49')
+          onPressed: () {
+            // Navigate to user profile instead of generic subscribe
+            UserProfileNavigation.navigateToUserProfile(
+              context,
+              userId: _currentList.userId,
+              userName: _currentList.userName,
+            );
+          },
+          style: TextButton.styleFrom(
+            foregroundColor: Colors.white,
+            backgroundColor: Theme.of(context).colorScheme.primary,
+          ),
+          child: const Text('View Profile'),
+        ),
+        const Text('\$1.49'), // This could be dynamic pricing
       ],
     );
   }
