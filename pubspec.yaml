@@ -45,6 +45,8 @@ dependencies:
   permission_handler:
   cached_network_image:
   flutter_local_notifications:
+  flutter_stripe: ^11.5.0
+  dio: ^5.8.0+1
 
 dev_dependencies:
   flutter_test:
