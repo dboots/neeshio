@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart';
 import 'package:provider/provider.dart';
 import '../services/auth_service.dart';
 
@@ -11,7 +12,6 @@ class RegisterScreen extends StatefulWidget {
 
 class _RegisterScreenState extends State<RegisterScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _nameController = TextEditingController();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
@@ -21,7 +21,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
   @override
   void dispose() {
-    _nameController.dispose();
     _emailController.dispose();
     _passwordController.dispose();
     _confirmPasswordController.dispose();
@@ -46,7 +45,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
     await authService.signUp(
       email: _emailController.text.trim(),
       password: _passwordController.text,
-      name: _nameController.text.trim(),
     );
 
     if (authService.error != null && mounted) {
@@ -62,6 +60,96 @@ class _RegisterScreenState extends State<RegisterScreen> {
       );
       Navigator.pop(context); // Go back to login screen
     }
+  }
+
+  void _showPrivacyPolicy() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Privacy Policy'),
+        content: const SingleChildScrollView(
+          child: Text(
+            'At NEESH, we respect your privacy and are committed to protecting your personal data. '
+            'This privacy policy explains how we collect, use, and protect your information when you use our app.\n\n'
+            'Information We Collect:\n'
+            '• Account information (name, email address)\n'
+            '• Location data (when you choose to share it)\n'
+            '• Places you save and rate\n'
+            '• Usage analytics to improve our service\n\n'
+            'How We Use Your Information:\n'
+            '• To provide and maintain our service\n'
+            '• To personalize your experience\n'
+            '• To communicate with you about updates\n'
+            '• To improve our app and features\n\n'
+            'Data Sharing:\n'
+            'We do not sell your personal information. We may share data only:\n'
+            '• With your explicit consent\n'
+            '• To comply with legal obligations\n'
+            '• To protect our rights and users\' safety\n\n'
+            'Your Rights:\n'
+            '• Access your personal data\n'
+            '• Correct inaccurate information\n'
+            '• Delete your account and data\n'
+            '• Control privacy settings\n\n'
+            'We use industry-standard security measures to protect your data. '
+            'By using NEESH, you consent to our data practices as described in this policy.',
+            style: TextStyle(fontSize: 14),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showTermsOfService() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Terms of Service'),
+        content: const SingleChildScrollView(
+          child: Text(
+            'Welcome to NEESH! These terms govern your use of our place-sharing application.\n\n'
+            'Acceptance of Terms:\n'
+            'By creating an account, you agree to these terms and our Privacy Policy. '
+            'If you disagree with any part, please do not use our service.\n\n'
+            'Your Account:\n'
+            '• You must provide accurate information\n'
+            '• Keep your password secure\n'
+            '• You\'re responsible for all account activity\n'
+            '• One account per person\n\n'
+            'Acceptable Use:\n'
+            '• Share genuine places and experiences\n'
+            '• Respect other users\' privacy\n'
+            '• Do not spam or post inappropriate content\n'
+            '• Follow local laws and regulations\n\n'
+            'Content and Lists:\n'
+            '• You own the content you create\n'
+            '• Grant us license to display your public content\n'
+            '• We may remove inappropriate content\n'
+            '• Respect others\' intellectual property\n\n'
+            'Service Availability:\n'
+            'We strive for reliable service but cannot guarantee 100% uptime. '
+            'We may modify or discontinue features with notice.\n\n'
+            'Limitation of Liability:\n'
+            'NEESH is provided "as is." We\'re not liable for any damages arising from app use. '
+            'Use location features responsibly.\n\n'
+            'These terms may be updated. Continued use constitutes acceptance of changes.',
+            style: TextStyle(fontSize: 14),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -101,23 +189,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     ),
                   ),
                   const SizedBox(height: 32),
-
-                  // Name field
-                  TextFormField(
-                    controller: _nameController,
-                    decoration: const InputDecoration(
-                      labelText: 'Full Name',
-                      prefixIcon: Icon(Icons.person),
-                      border: OutlineInputBorder(),
-                    ),
-                    validator: (value) {
-                      if (value == null || value.isEmpty) {
-                        return 'Please enter your name';
-                      }
-                      return null;
-                    },
-                  ),
-                  const SizedBox(height: 16),
 
                   // Email field
                   TextFormField(
@@ -210,6 +281,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
                   // Terms and conditions
                   Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Checkbox(
                         value: _agreedToTerms,
@@ -220,19 +292,43 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         },
                       ),
                       Expanded(
-                        child: RichText(
-                          text: TextSpan(
-                            text: 'I agree to the ',
-                            style: DefaultTextStyle.of(context).style,
-                            children: const [
-                              TextSpan(
-                                text: 'Terms and Conditions',
-                                style: TextStyle(
-                                  color: Color.fromARGB(255, 48, 4, 137),
-                                  fontWeight: FontWeight.bold,
-                                ),
+                        child: Padding(
+                          padding: const EdgeInsets.only(top: 12.0),
+                          child: RichText(
+                            text: TextSpan(
+                              text: 'I agree to the ',
+                              style: TextStyle(
+                                color: Theme.of(context)
+                                        .textTheme
+                                        .bodyMedium
+                                        ?.color ??
+                                    Colors.black87,
+                                fontSize: 14,
                               ),
-                            ],
+                              children: [
+                                TextSpan(
+                                  text: 'Terms of Service',
+                                  style: const TextStyle(
+                                    color: Color.fromARGB(255, 48, 4, 137),
+                                    fontWeight: FontWeight.bold,
+                                    decoration: TextDecoration.underline,
+                                  ),
+                                  recognizer: TapGestureRecognizer()
+                                    ..onTap = _showTermsOfService,
+                                ),
+                                const TextSpan(text: ' and '),
+                                TextSpan(
+                                  text: 'Privacy Policy',
+                                  style: const TextStyle(
+                                    color: Color.fromARGB(255, 48, 4, 137),
+                                    fontWeight: FontWeight.bold,
+                                    decoration: TextDecoration.underline,
+                                  ),
+                                  recognizer: TapGestureRecognizer()
+                                    ..onTap = _showPrivacyPolicy,
+                                ),
+                              ],
+                            ),
                           ),
                         ),
                       ),

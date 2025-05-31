@@ -967,7 +967,6 @@ class _PublicUserProfileScreenState extends State<PublicUserProfileScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(_userProfile?['name'] ?? widget.userName ?? 'User Profile'),
         backgroundColor: Colors.transparent,
         elevation: 0,
         foregroundColor: Colors.white,
