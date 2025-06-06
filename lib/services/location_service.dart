@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'dart:math';
 
@@ -19,12 +20,16 @@ class LocationService extends ChangeNotifier {
   String? get error => _error;
 
   // Default location (Hudson, Ohio)
-  static const LatLng _defaultLocation = LatLng(41.2407, -81.4412);
-  static const String _defaultLocationName = 'Hudson, Ohio';
+  static const LatLng _defaultLocation = LatLng(0, 0);
+  static const String _defaultLocationName = 'Loading';
 
   // Storage keys
   static const String _locationKey = 'current_location';
   static const String _locationNameKey = 'current_location_name';
+
+  // Google Geocoding API key - should be set via environment variable
+  static const String _geocodingApiKey =
+      String.fromEnvironment('GOOGLE_MAPS_KEY');
 
   /// Initialize the location service
   Future<void> initialize() async {
@@ -148,12 +153,12 @@ class LocationService extends ChangeNotifier {
 
       final location = LatLng(position.latitude, position.longitude);
       final locationName = await _getLocationName(location);
-      print('location found ${location} ${locationName}');
 
       _setLocation(location, locationName);
 
       if (kDebugMode) {
-        print('Got current location: $locationName');
+        print(
+            'Got current location: $locationName at ${location.latitude}, ${location.longitude}');
       }
     } catch (e) {
       if (kDebugMode) {
@@ -163,52 +168,197 @@ class LocationService extends ChangeNotifier {
     }
   }
 
-  /// Get a human-readable name for a location
+  /// Get a human-readable name for a location using reverse geocoding
   Future<String> _getLocationName(LatLng location) async {
-    // Simplified location name detection
-    // In a real app, you might use reverse geocoding
+    try {
+      // Try reverse geocoding with Google Maps API
+      if (_geocodingApiKey.isNotEmpty) {
+        final geocodedName = await _reverseGeocode(location);
+        if (geocodedName != null) {
+          if (kDebugMode) {
+            print('Geocoded location: $geocodedName');
+          }
+          return geocodedName;
+        }
+      } else {
+        if (kDebugMode) {
+          print('Google Maps API key not found for geocoding');
+        }
+      }
 
-    // Check if near known locations
-    if (_isNear(location, const LatLng(41.2407, -81.4412), 10)) {
-      return 'Hudson, Ohio';
-    } else if (_isNear(location, const LatLng(41.5085, -81.6954), 15)) {
-      return 'Cleveland, Ohio';
-    } else if (_isNear(location, const LatLng(41.0814, -81.5191), 15)) {
-      return 'Akron, Ohio';
-    } else if (_isNear(location, const LatLng(40.7128, -74.0060), 15)) {
-      return 'New York City, NY';
-    } else if (_isNear(location, const LatLng(34.0522, -118.2437), 15)) {
-      return 'Los Angeles, CA';
-    } else if (_isNear(location, const LatLng(41.8781, -87.6298), 15)) {
-      return 'Chicago, IL';
-    } else if (_isNear(location, const LatLng(37.7749, -122.4194), 15)) {
-      return 'San Francisco, CA';
-    } else {
-      // Fallback to coordinates
-      return 'Current Location (${location.latitude.toStringAsFixed(2)}, ${location.longitude.toStringAsFixed(2)})';
+      // Fallback: Use coordinates if geocoding fails
+      return 'Location (${location.latitude.toStringAsFixed(3)}, ${location.longitude.toStringAsFixed(3)})';
+    } catch (e) {
+      if (kDebugMode) {
+        print('Error getting location name: $e');
+      }
+      return 'Location (${location.latitude.toStringAsFixed(3)}, ${location.longitude.toStringAsFixed(3)})';
     }
   }
 
-  /// Check if a location is within a certain distance (km) of another location
-  bool _isNear(LatLng location1, LatLng location2, double radiusKm) {
+  /// Reverse geocode using Google Maps Geocoding API
+  Future<String?> _reverseGeocode(LatLng location) async {
+    try {
+      final url = Uri.parse('https://maps.googleapis.com/maps/api/geocode/json'
+          '?latlng=${location.latitude},${location.longitude}'
+          '&key=$_geocodingApiKey'
+          '&result_type=locality|administrative_area_level_1|administrative_area_level_2|sublocality');
+
+      final response = await http.get(url);
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+
+        if (data['status'] == 'OK' && data['results'].isNotEmpty) {
+          // Try to extract city and state/country from the response
+          return _parseGeocodingResult(data['results']);
+        } else if (data['status'] == 'ZERO_RESULTS') {
+          if (kDebugMode) {
+            print('No geocoding results found for location');
+          }
+        } else {
+          if (kDebugMode) {
+            print('Geocoding API error: ${data['status']}');
+          }
+        }
+      } else {
+        if (kDebugMode) {
+          print('Geocoding API HTTP error: ${response.statusCode}');
+        }
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        print('Reverse geocoding error: $e');
+      }
+    }
+    return null;
+  }
+
+  /// Parse geocoding results to extract the best location name
+  String? _parseGeocodingResult(List<dynamic> results) {
+    try {
+      // Priority order for location names:
+      // 1. City (locality) + State/Province
+      // 2. Sublocality + State/Province
+      // 3. Administrative Area Level 2 (County) + State/Province
+      // 4. Administrative Area Level 1 (State/Province) only
+      // 5. Country only
+
+      String? locality;
+      String? sublocality;
+      String? adminArea1; // State/Province
+      String? adminArea2; // County
+      String? country;
+
+      // Parse all results to find the best components
+      for (final result in results) {
+        final components = result['address_components'] as List;
+
+        for (final component in components) {
+          final types = component['types'] as List<dynamic>;
+          final longName = component['long_name'] as String;
+          final shortName = component['short_name'] as String;
+
+          if (types.contains('locality') && locality == null) {
+            locality = longName;
+          } else if (types.contains('sublocality') && sublocality == null) {
+            sublocality = longName;
+          } else if (types.contains('administrative_area_level_1') &&
+              adminArea1 == null) {
+            // Use short name for US states, long name for other countries
+            adminArea1 = shortName.length <= 3 ? shortName : longName;
+          } else if (types.contains('administrative_area_level_2') &&
+              adminArea2 == null) {
+            adminArea2 = longName;
+          } else if (types.contains('country') && country == null) {
+            country = longName;
+          }
+        }
+
+        // If we found a locality and state, we can stop searching
+        if (locality != null && adminArea1 != null) {
+          break;
+        }
+      }
+
+      // Build the location name based on available components
+      if (locality != null && adminArea1 != null) {
+        return '$locality, $adminArea1';
+      } else if (locality != null && country != null) {
+        return '$locality, $country';
+      } else if (sublocality != null && adminArea1 != null) {
+        return '$sublocality, $adminArea1';
+      } else if (sublocality != null && country != null) {
+        return '$sublocality, $country';
+      } else if (adminArea2 != null && adminArea1 != null) {
+        return '$adminArea2, $adminArea1';
+      } else if (adminArea1 != null) {
+        return adminArea1;
+      } else if (country != null) {
+        return country;
+      }
+
+      // If we still don't have a good name, try the formatted address
+      if (results.isNotEmpty) {
+        final firstResult = results[0];
+        final formattedAddress = firstResult['formatted_address'] as String?;
+        if (formattedAddress != null) {
+          // Try to extract just the relevant parts (remove street numbers, etc.)
+          return _simplifyFormattedAddress(formattedAddress);
+        }
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        print('Error parsing geocoding result: $e');
+      }
+    }
+    return null;
+  }
+
+  /// Simplify a formatted address to extract city, state
+  String _simplifyFormattedAddress(String formattedAddress) {
+    try {
+      final parts = formattedAddress.split(', ');
+
+      // Remove street address (usually the first part contains numbers)
+      final filteredParts = parts.where((part) {
+        // Remove parts that look like street addresses (contain numbers)
+        return !RegExp(r'^\d+').hasMatch(part.trim());
+      }).toList();
+
+      if (filteredParts.length >= 2) {
+        // Take the first two relevant parts (usually city, state)
+        return '${filteredParts[0]}, ${filteredParts[1]}';
+      } else if (filteredParts.isNotEmpty) {
+        return filteredParts[0];
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        print('Error simplifying formatted address: $e');
+      }
+    }
+
+    return formattedAddress;
+  }
+
+  /// Calculate distance between two coordinates using Haversine formula
+  double _calculateDistance(
+      double lat1, double lon1, double lat2, double lon2) {
     const double earthRadius = 6371.0; // Earth's radius in kilometers
 
-    final lat1Rad = location1.latitude * (pi / 180);
-    final lat2Rad = location2.latitude * (pi / 180);
-    final deltaLatRad = (location2.latitude - location1.latitude) * (pi / 180);
-    final deltaLngRad =
-        (location2.longitude - location1.longitude) * (pi / 180);
+    final lat1Rad = lat1 * (pi / 180);
+    final lat2Rad = lat2 * (pi / 180);
+    final deltaLatRad = (lat2 - lat1) * (pi / 180);
+    final deltaLonRad = (lon2 - lon1) * (pi / 180);
 
     final a = sin(deltaLatRad / 2) * sin(deltaLatRad / 2) +
         cos(lat1Rad) *
             cos(lat2Rad) *
-            sin(deltaLngRad / 2) *
-            sin(deltaLngRad / 2);
+            sin(deltaLonRad / 2) *
+            sin(deltaLonRad / 2);
 
     final c = 2 * atan2(sqrt(a), sqrt(1 - a));
-    final distance = earthRadius * c;
-
-    return distance <= radiusKm;
+    return earthRadius * c;
   }
 
   /// Set the current location and save it
@@ -228,6 +378,26 @@ class LocationService extends ChangeNotifier {
 
     if (kDebugMode) {
       print('Location updated to: $locationName');
+    }
+  }
+
+  /// Update location and get name via geocoding
+  Future<void> updateLocationWithGeocoding(LatLng location) async {
+    _isLoading = true;
+    notifyListeners();
+
+    try {
+      final locationName = await _getLocationName(location);
+      _setLocation(location, locationName);
+    } catch (e) {
+      _error = 'Failed to get location name: ${e.toString()}';
+      // Still update location with coordinates as fallback
+      final fallbackName =
+          'Location (${location.latitude.toStringAsFixed(3)}, ${location.longitude.toStringAsFixed(3)})';
+      _setLocation(location, fallbackName);
+    } finally {
+      _isLoading = false;
+      notifyListeners();
     }
   }
 
@@ -274,47 +444,6 @@ class LocationService extends ChangeNotifier {
         print('Error clearing saved location: $e');
       }
     }
-  }
-
-  /// Get a list of preset locations for quick selection
-  List<LocationOption> getPresetLocations() {
-    return [
-      LocationOption(
-        name: 'Hudson, Ohio',
-        location: const LatLng(41.2407, -81.4412),
-        description: 'Default location',
-      ),
-      LocationOption(
-        name: 'Cleveland, Ohio',
-        location: const LatLng(41.5085, -81.6954),
-        description: 'Major city in Ohio',
-      ),
-      LocationOption(
-        name: 'Akron, Ohio',
-        location: const LatLng(41.0814, -81.5191),
-        description: 'City in Summit County',
-      ),
-      LocationOption(
-        name: 'New York City, NY',
-        location: const LatLng(40.7128, -74.0060),
-        description: 'The Big Apple',
-      ),
-      LocationOption(
-        name: 'Los Angeles, CA',
-        location: const LatLng(34.0522, -118.2437),
-        description: 'City of Angels',
-      ),
-      LocationOption(
-        name: 'Chicago, IL',
-        location: const LatLng(41.8781, -87.6298),
-        description: 'The Windy City',
-      ),
-      LocationOption(
-        name: 'San Francisco, CA',
-        location: const LatLng(37.7749, -122.4194),
-        description: 'Golden Gate City',
-      ),
-    ];
   }
 
   /// Check if location services are available

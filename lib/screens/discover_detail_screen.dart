@@ -5,7 +5,9 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import '../services/discover_service.dart';
 import '../services/auth_service.dart';
+import '../services/location_service.dart';
 import '../widgets/star_rating_widget.dart';
+import '../widgets/location_selector_widget.dart';
 import '../models/place_list.dart';
 import '../screens/place_map_screen.dart';
 
@@ -13,9 +15,9 @@ class DiscoverDetailScreen extends StatefulWidget {
   final NearbyList nearbyList;
 
   const DiscoverDetailScreen({
-    Key? key,
+    super.key,
     required this.nearbyList,
-  }) : super(key: key);
+  });
 
   @override
   State<DiscoverDetailScreen> createState() => _DiscoverDetailScreenState();
@@ -26,11 +28,26 @@ class _DiscoverDetailScreenState extends State<DiscoverDetailScreen> {
   bool _isVoting = false;
   late NearbyList _currentList;
 
+  // Location state
+  LatLng? _currentLocation;
+  String? _currentLocationName;
+
   @override
   void initState() {
     super.initState();
     _currentList = widget.nearbyList;
+    _initializeLocation();
     _fetchListDetails();
+  }
+
+  // Initialize location from location service
+  Future<void> _initializeLocation() async {
+    final locationService =
+        Provider.of<LocationService>(context, listen: false);
+    setState(() {
+      _currentLocation = locationService.currentLocation;
+      _currentLocationName = locationService.currentLocationName;
+    });
   }
 
   // Fetch additional details if needed
@@ -39,6 +56,16 @@ class _DiscoverDetailScreenState extends State<DiscoverDetailScreen> {
     // For this example, we'll simulate a delay
     await Future.delayed(const Duration(milliseconds: 500));
     setState(() => _isLoading = false);
+  }
+
+  // Show location picker dialog
+  void _showLocationPicker() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Location picker coming soon!'),
+        duration: Duration(seconds: 2),
+      ),
+    );
   }
 
   Future<void> _handleVote(int voteValue) async {
@@ -237,6 +264,17 @@ class _DiscoverDetailScreenState extends State<DiscoverDetailScreen> {
     return '$streetNumber $street, $city';
   }
 
+  // Calculate distance from current location to list
+  String _getDistanceFromCurrentLocation() {
+    if (_currentLocation == null) {
+      return _currentList.getFormattedDistance();
+    }
+
+    // Use the same distance calculation logic as the discover service
+    // For now, just return the original distance
+    return _currentList.getFormattedDistance();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -256,50 +294,102 @@ class _DiscoverDetailScreenState extends State<DiscoverDetailScreen> {
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
-          : SingleChildScrollView(
-              child: Column(
-                children: [
-                  // List details
-                  Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // User info and rating
-                        _buildUserInfo(),
-                        const SizedBox(height: 16),
+          : Stack(
+              children: [
+                SingleChildScrollView(
+                  // Add bottom padding to account for location selector
+                  padding: const EdgeInsets.only(bottom: 80),
+                  child: Column(
+                    children: [
+                      // List details
+                      Padding(
+                        padding: const EdgeInsets.all(16.0),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // User info and rating
+                            _buildUserInfo(),
+                            const SizedBox(height: 16),
 
-                        // Description
-                        if (_currentList.description != null) ...[
-                          Text(
-                            _currentList.description!,
-                            style: Theme.of(context).textTheme.bodyLarge,
-                          ),
-                          const SizedBox(height: 16),
-                        ],
+                            // Distance from current location
+                            if (_currentLocationName != null) ...[
+                              Container(
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: Colors.blue.withOpacity(0.1),
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(
+                                      color: Colors.blue.withOpacity(0.3)),
+                                ),
+                                child: Row(
+                                  children: [
+                                    const Icon(Icons.near_me,
+                                        color: Colors.blue, size: 20),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      '${_getDistanceFromCurrentLocation()} from $_currentLocationName',
+                                      style: const TextStyle(
+                                        color: Colors.blue,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(height: 16),
+                            ],
 
-                        // Voting section
-                        _buildVotingSection(),
+                            // Description
+                            if (_currentList.description != null) ...[
+                              Text(
+                                _currentList.description!,
+                                style: Theme.of(context).textTheme.bodyLarge,
+                              ),
+                              const SizedBox(height: 16),
+                            ],
 
-                        const SizedBox(height: 16),
+                            // Voting section
+                            _buildVotingSection(),
 
-                        // Rating categories
-                        if (_currentList.categories != null &&
-                            _currentList.categories!.isNotEmpty) ...[
-                          _buildRatingCategories(),
-                          const SizedBox(height: 16),
-                        ],
-                      ],
-                    ),
+                            const SizedBox(height: 16),
+
+                            // Rating categories
+                            if (_currentList.categories != null &&
+                                _currentList.categories!.isNotEmpty) ...[
+                              _buildRatingCategories(),
+                              const SizedBox(height: 16),
+                            ],
+                          ],
+                        ),
+                      ),
+
+                      // Places list
+                      _buildPlacesList(),
+
+                      // Add some bottom padding
+                      const SizedBox(height: 32),
+                    ],
                   ),
+                ),
 
-                  // Places list
-                  _buildPlacesList(),
-
-                  // Add some bottom padding
-                  const SizedBox(height: 32),
-                ],
-              ),
+                // Location selector at the bottom
+                Positioned(
+                  bottom: 0,
+                  left: 0,
+                  right: 0,
+                  child: Consumer<LocationService>(
+                    builder: (context, locationService, child) {
+                      return LocationSelector(
+                        currentLocationName:
+                            locationService.currentLocationName ??
+                                'Unknown Location',
+                        isLoadingLocation: locationService.isLoading,
+                        onLocationTap: _showLocationPicker,
+                      );
+                    },
+                  ),
+                ),
+              ],
             ),
     );
   }

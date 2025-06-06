@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 import '../models/place_list.dart';
@@ -24,7 +25,7 @@ class PlaceListService extends ChangeNotifier {
     _sharedLists = [];
     _error = null;
     _isLoading = false;
-    notifyListeners();
+    _safeNotifyListeners();
   }
 
   /// Load all lists (owned and shared) from Supabase
@@ -333,9 +334,8 @@ class PlaceListService extends ChangeNotifier {
       // This will delete the list and all related data (entries, ratings, etc.)
       await _supabase.from('place_lists').delete().eq('id', listId);
 
-      // Remove from local cache
-      _lists.removeWhere((list) => list.id == listId);
-      _sharedLists.removeWhere((list) => list.id == listId);
+      // Update local cache safely
+      _updateListsAfterDelete(listId);
     } catch (e) {
       _setError('Failed to delete list: ${e.toString()}');
       throw Exception('Failed to delete list: ${e.toString()}');
@@ -358,12 +358,8 @@ class PlaceListService extends ChangeNotifier {
         'created_at': DateTime.now().toIso8601String(),
       });
 
-      // Update local cache
-      final index = _lists.indexWhere((list) => list.id == listId);
-      if (index != -1) {
-        final updatedList = _lists[index].addRatingCategory(category);
-        _lists[index] = updatedList;
-      }
+      // Update local cache safely
+      _updateListAfterCategoryAdd(listId, category);
     } catch (e) {
       _setError('Failed to add rating category: ${e.toString()}');
       throw Exception('Failed to add rating category: ${e.toString()}');
@@ -381,12 +377,8 @@ class PlaceListService extends ChangeNotifier {
       // Delete category from Supabase (ratings should cascade delete)
       await _supabase.from('rating_categories').delete().eq('id', categoryId);
 
-      // Update local cache
-      final index = _lists.indexWhere((list) => list.id == listId);
-      if (index != -1) {
-        final updatedList = _lists[index].removeRatingCategory(categoryId);
-        _lists[index] = updatedList;
-      }
+      // Update local cache safely
+      _updateListAfterCategoryRemove(listId, categoryId);
     } catch (e) {
       _setError('Failed to remove rating category: ${e.toString()}');
       throw Exception('Failed to remove rating category: ${e.toString()}');
@@ -598,29 +590,11 @@ class PlaceListService extends ChangeNotifier {
         }
       }
 
-      // Update local cache - create a new Place object with the correct internal ID
-      final placeWithCorrectId = Place(
-        id: internalPlaceId,
-        name: place.name,
-        address: place.address,
-        lat: place.lat,
-        lng: place.lng,
-        image: place.image,
-        phone: place.phone,
-      );
+      // Update local cache safely
+      _updateListAfterPlaceAdd(listId, place, internalPlaceId, ratings, notes);
 
-      final index = _lists.indexWhere((list) => list.id == listId);
-      if (index != -1) {
-        final updatedList = _lists[index].addPlace(
-          placeWithCorrectId,
-          ratings: ratings?.where((r) => r.value > 0).toList(),
-          notes: notes?.trim(),
-        );
-        _lists[index] = updatedList;
-
-        if (kDebugMode) {
-          print('Successfully updated local cache');
-        }
+      if (kDebugMode) {
+        print('Successfully updated local cache');
       }
     } catch (e) {
       final errorMessage = 'Failed to add place to list: ${e.toString()}';
@@ -650,12 +624,8 @@ class PlaceListService extends ChangeNotifier {
           .eq('list_id', listId)
           .eq('place_id', placeId);
 
-      // Update local cache
-      final index = _lists.indexWhere((list) => list.id == listId);
-      if (index != -1) {
-        final updatedList = _lists[index].removePlace(placeId);
-        _lists[index] = updatedList;
-      }
+      // Update local cache safely
+      _updateListAfterPlaceRemove(listId, placeId);
     } catch (e) {
       _setError('Failed to remove place from list: ${e.toString()}');
       throw Exception('Failed to remove place from list: ${e.toString()}');
@@ -706,13 +676,8 @@ class PlaceListService extends ChangeNotifier {
         });
       }
 
-      // Update local cache
-      final listIndex = _lists.indexWhere((list) => list.id == listId);
-      if (listIndex != -1) {
-        final updatedList =
-            _lists[listIndex].updateRating(placeId, categoryId, rating);
-        _lists[listIndex] = updatedList;
-      }
+      // Update local cache safely
+      _updateListAfterRatingChange(listId, placeId, categoryId, rating);
     } catch (e) {
       _setError('Failed to update rating: ${e.toString()}');
       throw Exception('Failed to update rating: ${e.toString()}');
@@ -737,12 +702,8 @@ class PlaceListService extends ChangeNotifier {
           .eq('list_id', listId)
           .eq('place_id', placeId);
 
-      // Update local cache
-      final index = _lists.indexWhere((list) => list.id == listId);
-      if (index != -1) {
-        final updatedList = _lists[index].updateNotes(placeId, notes.trim());
-        _lists[index] = updatedList;
-      }
+      // Update local cache safely
+      _updateListAfterNotesChange(listId, placeId, notes.trim());
     } catch (e) {
       _setError('Failed to update notes: ${e.toString()}');
       throw Exception('Failed to update notes: ${e.toString()}');
@@ -849,21 +810,109 @@ class PlaceListService extends ChangeNotifier {
     return _supabase.auth.currentUser?.id;
   }
 
-  /// Set loading state
+  /// Set loading state safely
   void _setLoading(bool loading) {
     _isLoading = loading;
-    notifyListeners();
+    _safeNotifyListeners();
   }
 
-  /// Set error message
+  /// Set error message safely
   void _setError(String error) {
     _error = error;
-    notifyListeners();
+    _safeNotifyListeners();
   }
 
   /// Clear error message
   void _clearError() {
     _error = null;
+  }
+
+  /// Safe method to notify listeners that prevents build-time errors
+  void _safeNotifyListeners() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (hasListeners) {
+        notifyListeners();
+      }
+    });
+  }
+
+  /// Safely update lists after deletion
+  void _updateListsAfterDelete(String listId) {
+    _lists.removeWhere((list) => list.id == listId);
+    _sharedLists.removeWhere((list) => list.id == listId);
+  }
+
+  /// Safely update list after category addition
+  void _updateListAfterCategoryAdd(String listId, RatingCategory category) {
+    final index = _lists.indexWhere((list) => list.id == listId);
+    if (index != -1) {
+      final updatedList = _lists[index].addRatingCategory(category);
+      _lists[index] = updatedList;
+    }
+  }
+
+  /// Safely update list after category removal
+  void _updateListAfterCategoryRemove(String listId, String categoryId) {
+    final index = _lists.indexWhere((list) => list.id == listId);
+    if (index != -1) {
+      final updatedList = _lists[index].removeRatingCategory(categoryId);
+      _lists[index] = updatedList;
+    }
+  }
+
+  /// Safely update list after place addition
+  void _updateListAfterPlaceAdd(String listId, Place originalPlace,
+      String internalPlaceId, List<RatingValue>? ratings, String? notes) {
+    // Create a new Place object with the correct internal ID
+    final placeWithCorrectId = Place(
+      id: internalPlaceId,
+      name: originalPlace.name,
+      address: originalPlace.address,
+      lat: originalPlace.lat,
+      lng: originalPlace.lng,
+      image: originalPlace.image,
+      phone: originalPlace.phone,
+    );
+
+    final index = _lists.indexWhere((list) => list.id == listId);
+    if (index != -1) {
+      final updatedList = _lists[index].addPlace(
+        placeWithCorrectId,
+        ratings: ratings?.where((r) => r.value > 0).toList(),
+        notes: notes?.trim(),
+      );
+      _lists[index] = updatedList;
+    }
+  }
+
+  /// Safely update list after place removal
+  void _updateListAfterPlaceRemove(String listId, String placeId) {
+    final index = _lists.indexWhere((list) => list.id == listId);
+    if (index != -1) {
+      final updatedList = _lists[index].removePlace(placeId);
+      _lists[index] = updatedList;
+    }
+  }
+
+  /// Safely update list after rating change
+  void _updateListAfterRatingChange(
+      String listId, String placeId, String categoryId, int rating) {
+    final listIndex = _lists.indexWhere((list) => list.id == listId);
+    if (listIndex != -1) {
+      final updatedList =
+          _lists[listIndex].updateRating(placeId, categoryId, rating);
+      _lists[listIndex] = updatedList;
+    }
+  }
+
+  /// Safely update list after notes change
+  void _updateListAfterNotesChange(
+      String listId, String placeId, String notes) {
+    final index = _lists.indexWhere((list) => list.id == listId);
+    if (index != -1) {
+      final updatedList = _lists[index].updateNotes(placeId, notes);
+      _lists[index] = updatedList;
+    }
   }
 
   /// Retry last failed operation

@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import '../models/place_list.dart';
 import '../services/place_search_service.dart' as search;
 import '../widgets/place_list_drawer.dart';
+import '../widgets/location_change_dialog.dart';
 
 class AddPlacesScreen extends StatefulWidget {
   const AddPlacesScreen({super.key});
@@ -23,12 +24,7 @@ class _AddPlacesScreenState extends State<AddPlacesScreen>
   List<search.PlaceSearchResult> _nearbyPlaces = [];
   bool _isSearching = false;
   bool _isLoadingNearby = true;
-  bool _isChangingLocation = false;
   Place? _selectedPlace;
-
-  // Default location (Portland, OR)
-  LatLng _currentLocation = const LatLng(45.521563, -122.677433);
-  String _currentLocationName = 'Portland, OR';
 
   @override
   bool get wantKeepAlive => true;
@@ -40,17 +36,16 @@ class _AddPlacesScreenState extends State<AddPlacesScreen>
   }
 
   Future<void> _initializeScreen() async {
-    await _getCurrentLocation();
-    await _loadNearbyPlaces();
-  }
-
-  Future<void> _getCurrentLocation() async {
+    // Wait for location service to be ready
     final locationService =
         Provider.of<LocationService>(context, listen: false);
-    setState(() {
-      _currentLocation = locationService.currentLocation!;
-      _currentLocationName = locationService.currentLocationName!;
-    });
+
+    // If location service isn't initialized yet, wait a bit
+    if (locationService.currentLocation == null && !locationService.isLoading) {
+      await locationService.initialize();
+    }
+
+    await _loadNearbyPlaces();
   }
 
   @override
@@ -65,11 +60,29 @@ class _AddPlacesScreenState extends State<AddPlacesScreen>
     });
 
     try {
+      final locationService =
+          Provider.of<LocationService>(context, listen: false);
+      final currentLocation = locationService.currentLocation;
+
+      if (currentLocation == null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+                content:
+                    Text('Location not available. Please set your location.')),
+          );
+        }
+        setState(() {
+          _isLoadingNearby = false;
+        });
+        return;
+      }
+
       final searchService = search.PlaceSearchService();
       final results = await searchService.searchNearbyPlaces(
         search.LatLng(
-          lat: _currentLocation.latitude,
-          lng: _currentLocation.longitude,
+          lat: currentLocation.latitude,
+          lng: currentLocation.longitude,
         ),
         radius: 2000, // 2km radius
       );
@@ -91,50 +104,27 @@ class _AddPlacesScreenState extends State<AddPlacesScreen>
   }
 
   Future<void> _changeLocation() async {
-    setState(() {
-      _isChangingLocation = true;
-    });
+    showDialog(
+      context: context,
+      builder: (context) => LocationChangeDialog(
+        onLocationSelected: (location, locationName) async {
+          final locationService =
+              Provider.of<LocationService>(context, listen: false);
 
-    try {
-      // Search for the new location
-      final searchService = search.PlaceSearchService();
-      final results = await showDialog<search.PlaceSearchResult?>(
-        context: context,
-        builder: (context) =>
-            _LocationSearchDialog(searchService: searchService),
-      );
+          // Update the location service with the new location
+          await locationService.updateLocationWithGeocoding(location);
 
-      if (results != null) {
-        setState(() {
-          _currentLocation = LatLng(results.lat, results.lng);
-          _currentLocationName = results.name;
-          _isChangingLocation = false;
-        });
+          // Reload nearby places for the new location
+          await _loadNearbyPlaces();
 
-        // Reload nearby places for the new location
-        await _loadNearbyPlaces();
-
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-                content: Text('Location changed to $_currentLocationName')),
-          );
-        }
-      } else {
-        setState(() {
-          _isChangingLocation = false;
-        });
-      }
-    } catch (e) {
-      setState(() {
-        _isChangingLocation = false;
-      });
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to change location: $e')),
-        );
-      }
-    }
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('Location changed to $locationName')),
+            );
+          }
+        },
+      ),
+    );
   }
 
   Future<void> _searchPlaces() async {
@@ -151,12 +141,20 @@ class _AddPlacesScreenState extends State<AddPlacesScreen>
     });
 
     try {
+      final locationService =
+          Provider.of<LocationService>(context, listen: false);
+      final currentLocation = locationService.currentLocation;
+
+      if (currentLocation == null) {
+        throw Exception('Location not available');
+      }
+
       final searchService = search.PlaceSearchService();
       final results = await searchService.searchPlaces(
         query,
         location: search.LatLng(
-          lat: _currentLocation.latitude,
-          lng: _currentLocation.longitude,
+          lat: currentLocation.latitude,
+          lng: currentLocation.longitude,
         ),
       );
 
@@ -231,64 +229,89 @@ class _AddPlacesScreenState extends State<AddPlacesScreen>
                 ),
               ),
               // Location selector
-              Padding(
-                padding: const EdgeInsets.fromLTRB(12.0, 0.0, 12.0, 12.0),
-                child: InkWell(
-                  onTap: _isChangingLocation ? null : _changeLocation,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 16, vertical: 12),
-                    decoration: BoxDecoration(
-                      border: Border.all(color: Colors.grey.shade300),
-                      borderRadius: BorderRadius.circular(8),
-                      color: Colors.grey.shade50,
-                    ),
-                    child: Row(
-                      children: [
-                        Icon(
-                          Icons.location_on,
-                          color: Theme.of(context).colorScheme.primary,
-                          size: 20,
+              Consumer<LocationService>(
+                builder: (context, locationService, child) {
+                  return Padding(
+                    padding: const EdgeInsets.fromLTRB(12.0, 0.0, 12.0, 12.0),
+                    child: InkWell(
+                      onTap: locationService.isLoading ? null : _changeLocation,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 12),
+                        decoration: BoxDecoration(
+                          border: Border.all(color: Colors.grey.shade300),
+                          borderRadius: BorderRadius.circular(8),
+                          color: Colors.grey.shade50,
                         ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Text(
-                                'Current Location',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: Colors.grey,
-                                  fontWeight: FontWeight.w500,
-                                ),
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.location_on,
+                              color: Theme.of(context).colorScheme.primary,
+                              size: 20,
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text(
+                                    'Current Location',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.grey,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                  Text(
+                                    locationService.isLoading
+                                        ? 'Getting location...'
+                                        : locationService.currentLocationName ??
+                                            'Unknown location',
+                                    style: const TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  // Show error if there is one
+                                  if (locationService.error != null)
+                                    Text(
+                                      'Error: ${locationService.error}',
+                                      style: const TextStyle(
+                                        fontSize: 12,
+                                        color: Colors.red,
+                                      ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                ],
                               ),
-                              Text(
-                                _currentLocationName,
-                                style: const TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                                overflow: TextOverflow.ellipsis,
+                            ),
+                            if (locationService.isLoading)
+                              const SizedBox(
+                                width: 20,
+                                height: 20,
+                                child:
+                                    CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            else if (locationService.error != null)
+                              Icon(
+                                Icons.error_outline,
+                                color: Colors.red.shade600,
+                                size: 20,
+                              )
+                            else
+                              Icon(
+                                Icons.keyboard_arrow_right,
+                                color: Colors.grey.shade600,
                               ),
-                            ],
-                          ),
+                          ],
                         ),
-                        if (_isChangingLocation)
-                          const SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        else
-                          Icon(
-                            Icons.keyboard_arrow_right,
-                            color: Colors.grey.shade600,
-                          ),
-                      ],
+                      ),
                     ),
-                  ),
-                ),
+                  );
+                },
               ),
             ],
           ),
@@ -371,28 +394,57 @@ class _AddPlacesScreenState extends State<AddPlacesScreen>
     }
 
     if (_nearbyPlaces.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(Icons.location_off, size: 64, color: Colors.grey),
-            const SizedBox(height: 16),
-            const Text(
-              'No nearby places found',
-              style: TextStyle(fontSize: 18, color: Colors.grey),
+      return Consumer<LocationService>(
+        builder: (context, locationService, child) {
+          return Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                    locationService.error != null
+                        ? Icons.location_off
+                        : Icons.place,
+                    size: 64,
+                    color: Colors.grey),
+                const SizedBox(height: 16),
+                Text(
+                  locationService.error != null
+                      ? 'Location Error'
+                      : 'No nearby places found',
+                  style: const TextStyle(fontSize: 18, color: Colors.grey),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  locationService.error != null
+                      ? 'Please check your location settings'
+                      : 'Try searching for specific places or changing your location',
+                  style: const TextStyle(color: Colors.grey),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    ElevatedButton.icon(
+                      onPressed: () async {
+                        await locationService.refreshCurrentLocation();
+                        await _loadNearbyPlaces();
+                      },
+                      icon: const Icon(Icons.refresh),
+                      label: const Text('Retry'),
+                    ),
+                    const SizedBox(width: 16),
+                    OutlinedButton.icon(
+                      onPressed: _changeLocation,
+                      icon: const Icon(Icons.edit_location),
+                      label: const Text('Change Location'),
+                    ),
+                  ],
+                ),
+              ],
             ),
-            const SizedBox(height: 8),
-            const Text(
-              'Try searching for specific places',
-              style: TextStyle(color: Colors.grey),
-            ),
-            const SizedBox(height: 16),
-            ElevatedButton(
-              onPressed: _loadNearbyPlaces,
-              child: const Text('Retry'),
-            ),
-          ],
-        ),
+          );
+        },
       );
     }
 
@@ -543,146 +595,6 @@ class _AddPlacesScreenState extends State<AddPlacesScreen>
     return CircleAvatar(
       backgroundColor: iconColor.withOpacity(0.1),
       child: Icon(iconData, color: iconColor),
-    );
-  }
-}
-
-// Location search dialog widget
-class _LocationSearchDialog extends StatefulWidget {
-  final search.PlaceSearchService searchService;
-
-  const _LocationSearchDialog({required this.searchService});
-
-  @override
-  State<_LocationSearchDialog> createState() => _LocationSearchDialogState();
-}
-
-class _LocationSearchDialogState extends State<_LocationSearchDialog> {
-  final TextEditingController _locationController = TextEditingController();
-  List<search.PlaceSearchResult> _locationResults = [];
-  bool _isSearching = false;
-
-  @override
-  void dispose() {
-    _locationController.dispose();
-    super.dispose();
-  }
-
-  Future<void> _searchLocations() async {
-    final query = _locationController.text.trim();
-    if (query.isEmpty) return;
-
-    setState(() {
-      _isSearching = true;
-    });
-
-    try {
-      // Search for locations (cities, states, etc.)
-      final results = await widget.searchService.searchPlaces('$query city');
-
-      // Filter results to prefer cities and administrative areas
-      final filteredResults = results.where((result) {
-        final types = result.types ?? [];
-        return types.contains('locality') ||
-            types.contains('administrative_area_level_1') ||
-            types.contains('administrative_area_level_2') ||
-            types.contains('sublocality') ||
-            result.name.toLowerCase().contains('city') ||
-            result.address
-                .contains(','); // Likely to be a city if it has a comma
-      }).toList();
-
-      setState(() {
-        _locationResults = filteredResults.isEmpty ? results : filteredResults;
-        _isSearching = false;
-      });
-    } catch (e) {
-      setState(() {
-        _isSearching = false;
-      });
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Location search failed: $e')),
-        );
-      }
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text('Change Location'),
-      content: SizedBox(
-        width: double.maxFinite,
-        height: 400,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: _locationController,
-              decoration: const InputDecoration(
-                labelText: 'Search for a city or location',
-                hintText: 'e.g., New York, Tokyo, San Francisco',
-                prefixIcon: Icon(Icons.search),
-                border: OutlineInputBorder(),
-              ),
-              onSubmitted: (_) => _searchLocations(),
-              autofocus: true,
-            ),
-            const SizedBox(height: 8),
-            Align(
-              alignment: Alignment.centerRight,
-              child: ElevatedButton(
-                onPressed: _searchLocations,
-                child: const Text('Search'),
-              ),
-            ),
-            const SizedBox(height: 16),
-            if (_isSearching)
-              const Expanded(
-                child: Center(child: CircularProgressIndicator()),
-              )
-            else if (_locationResults.isNotEmpty)
-              Expanded(
-                child: ListView.builder(
-                  shrinkWrap: true,
-                  itemCount: _locationResults.length,
-                  itemBuilder: (context, index) {
-                    final result = _locationResults[index];
-                    return ListTile(
-                      leading: const Icon(Icons.location_city),
-                      title: Text(result.name),
-                      subtitle: Text(
-                        result.address,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      onTap: () {
-                        Navigator.of(context).pop(result);
-                      },
-                    );
-                  },
-                ),
-              )
-            else if (_locationController.text.isNotEmpty)
-              const Expanded(
-                child: Center(
-                  child: Text(
-                    'No locations found.\nTry searching for a city name.',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(color: Colors.grey),
-                  ),
-                ),
-              ),
-          ],
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
-        ),
-      ],
     );
   }
 }

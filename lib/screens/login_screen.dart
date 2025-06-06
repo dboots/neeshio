@@ -43,16 +43,16 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
-  Future<void> _signInWithGoogle() async {
-    final authService = Provider.of<AuthService>(context, listen: false);
-    await authService.signInWithGoogle();
+  // Future<void> _signInWithGoogle() async {
+  //   final authService = Provider.of<AuthService>(context, listen: false);
+  //   await authService.signInWithGoogle();
 
-    if (authService.error != null && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(authService.error!)),
-      );
-    }
-  }
+  //   if (authService.error != null && mounted) {
+  //     ScaffoldMessenger.of(context).showSnackBar(
+  //       SnackBar(content: Text(authService.error!)),
+  //     );
+  //   }
+  // }
 
   @override
   Widget build(BuildContext context) {
