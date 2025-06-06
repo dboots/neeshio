@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:neesh/services/location_service.dart';
 import 'package:provider/provider.dart';
 
@@ -25,6 +24,94 @@ class _AddPlacesScreenState extends State<AddPlacesScreen>
   bool _isSearching = false;
   bool _isLoadingNearby = true;
   Place? _selectedPlace;
+
+  // Define allowed categories for filtering
+  static const Set<String> _allowedCategories = {
+    // Food categories
+    'restaurant',
+    'food',
+    'cafe',
+    'bakery',
+    'bar',
+    'meal_takeaway',
+    'meal_delivery',
+    'cafeteria',
+    'fast_food',
+    'ice_cream_shop',
+    'pizza_restaurant',
+    'sandwich_shop',
+    'seafood_restaurant',
+    'steak_house',
+    'sushi_restaurant',
+    'vegetarian_restaurant',
+    'wine_bar',
+    'brewery',
+    'night_club',
+    'liquor_store',
+
+    // Attractions categories
+    'tourist_attraction',
+    'museum',
+    'amusement_park',
+    'aquarium',
+    'art_gallery',
+    'casino',
+    'movie_theater',
+    'stadium',
+    'zoo',
+    'bowling_alley',
+    'entertainment',
+    'landmark',
+    'place_of_worship',
+    'library',
+    'cultural_center',
+
+    // Shopping categories
+    'store',
+    'shopping_mall',
+    'department_store',
+    'clothing_store',
+    'shoe_store',
+    'jewelry_store',
+    'electronics_store',
+    'furniture_store',
+    'home_goods_store',
+    'grocery_or_supermarket',
+    'convenience_store',
+    'pharmacy',
+    'florist',
+    'book_store',
+    'pet_store',
+    'bicycle_store',
+    'car_dealer',
+    'hardware_store',
+    'supermarket',
+    'shopping_center',
+
+    // Outdoors categories
+    'park',
+    'campground',
+    'rv_park',
+    'national_park',
+    'state_park',
+    'beach',
+    'hiking_area',
+    'marina',
+    'ski_resort',
+    'golf_course',
+    'tennis_court',
+    'swimming_pool',
+    'gym',
+    'spa',
+    'sports_club',
+    'recreation_center',
+    'rock_climbing_gym',
+    'outdoor_activity',
+    'nature_reserve',
+    'botanical_garden',
+    'fishing_spot',
+    'trail',
+  };
 
   @override
   bool get wantKeepAlive => true;
@@ -52,6 +139,21 @@ class _AddPlacesScreenState extends State<AddPlacesScreen>
   void dispose() {
     _searchController.dispose();
     super.dispose();
+  }
+
+  /// Filter places based on allowed categories
+  bool _isPlaceInAllowedCategory(search.PlaceSearchResult place) {
+    final placeTypes =
+        place.types?.map((type) => type.toLowerCase()).toSet() ?? <String>{};
+
+    // Check if any of the place's types match our allowed categories
+    return placeTypes.any((type) => _allowedCategories.contains(type));
+  }
+
+  /// Filter a list of places to only include allowed categories
+  List<search.PlaceSearchResult> _filterPlacesByCategory(
+      List<search.PlaceSearchResult> places) {
+    return places.where(_isPlaceInAllowedCategory).toList();
   }
 
   Future<void> _loadNearbyPlaces() async {
@@ -87,8 +189,11 @@ class _AddPlacesScreenState extends State<AddPlacesScreen>
         radius: 2000, // 2km radius
       );
 
+      // Filter results to only include allowed categories
+      final filteredResults = _filterPlacesByCategory(results);
+
       setState(() {
-        _nearbyPlaces = results;
+        _nearbyPlaces = filteredResults;
         _isLoadingNearby = false;
       });
     } catch (e) {
@@ -158,10 +263,25 @@ class _AddPlacesScreenState extends State<AddPlacesScreen>
         ),
       );
 
+      // Filter search results to only include allowed categories
+      final filteredResults = _filterPlacesByCategory(results);
+
       setState(() {
-        _searchResults = results;
+        _searchResults = filteredResults;
         _isSearching = false;
       });
+
+      if (mounted && filteredResults.length < results.length) {
+        // Show message about filtered results
+        final filteredCount = results.length - filteredResults.length;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+                'Found ${filteredResults.length} matching places (filtered out $filteredCount other locations)'),
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
     } catch (e) {
       setState(() {
         _isSearching = false;
@@ -188,6 +308,29 @@ class _AddPlacesScreenState extends State<AddPlacesScreen>
     });
   }
 
+  /// Get category display name for a place
+  String _getCategoryDisplayName(search.PlaceSearchResult place) {
+    final primaryType = place.getPrimaryType().toLowerCase();
+
+    if (_allowedCategories.contains('restaurant') &&
+        ['restaurant', 'food', 'cafe', 'bakery', 'bar'].contains(primaryType)) {
+      return 'Food & Dining';
+    } else if (_allowedCategories.contains('tourist_attraction') &&
+        ['tourist_attraction', 'museum', 'amusement_park', 'aquarium']
+            .contains(primaryType)) {
+      return 'Attractions';
+    } else if (_allowedCategories.contains('store') &&
+        ['store', 'shopping_mall', 'department_store', 'grocery_or_supermarket']
+            .contains(primaryType)) {
+      return 'Shopping';
+    } else if (_allowedCategories.contains('park') &&
+        ['park', 'campground', 'beach', 'hiking_area'].contains(primaryType)) {
+      return 'Outdoors';
+    }
+
+    return 'Other';
+  }
+
   @override
   Widget build(BuildContext context) {
     super.build(context);
@@ -197,16 +340,15 @@ class _AddPlacesScreenState extends State<AddPlacesScreen>
       appBar: AppBar(
         title: const Text('Add Places'),
         bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(120),
+          preferredSize: const Size.fromHeight(140),
           child: Column(
             children: [
-              // Search bar
               Padding(
                 padding: const EdgeInsets.fromLTRB(12.0, 12.0, 12.0, 8.0),
                 child: TextField(
                   controller: _searchController,
                   decoration: InputDecoration(
-                    hintText: 'Search for places...',
+                    hintText: 'Search for restaurants, attractions, shops...',
                     prefixIcon: const Icon(Icons.search),
                     suffixIcon: _searchController.text.isNotEmpty
                         ? IconButton(
@@ -346,19 +488,24 @@ class _AddPlacesScreenState extends State<AddPlacesScreen>
 
   Widget _buildSearchResults() {
     if (_searchResults.isEmpty && _searchController.text.isNotEmpty) {
-      return const Center(
+      return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.search_off, size: 64, color: Colors.grey),
-            SizedBox(height: 16),
-            Text(
+            const Icon(Icons.search_off, size: 64, color: Colors.grey),
+            const SizedBox(height: 16),
+            const Text(
               'No places found',
               style: TextStyle(fontSize: 18, color: Colors.grey),
             ),
-            Text(
-              'Try a different search term',
-              style: TextStyle(color: Colors.grey),
+            const SizedBox(height: 8),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 32),
+              child: Text(
+                'Try searching for restaurants, attractions, shops, or outdoor places',
+                style: const TextStyle(color: Colors.grey),
+                textAlign: TextAlign.center,
+              ),
             ),
           ],
         ),
@@ -414,12 +561,15 @@ class _AddPlacesScreenState extends State<AddPlacesScreen>
                   style: const TextStyle(fontSize: 18, color: Colors.grey),
                 ),
                 const SizedBox(height: 8),
-                Text(
-                  locationService.error != null
-                      ? 'Please check your location settings'
-                      : 'Try searching for specific places or changing your location',
-                  style: const TextStyle(color: Colors.grey),
-                  textAlign: TextAlign.center,
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 32),
+                  child: Text(
+                    locationService.error != null
+                        ? 'Please check your location settings'
+                        : 'No restaurants, attractions, shops, or outdoor places found nearby',
+                    style: const TextStyle(color: Colors.grey),
+                    textAlign: TextAlign.center,
+                  ),
                 ),
                 const SizedBox(height: 16),
                 Row(
@@ -485,6 +635,8 @@ class _AddPlacesScreenState extends State<AddPlacesScreen>
   }
 
   Widget _buildPlaceCard(search.PlaceSearchResult result) {
+    final categoryDisplayName = _getCategoryDisplayName(result);
+
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       child: ListTile(
@@ -500,6 +652,27 @@ class _AddPlacesScreenState extends State<AddPlacesScreen>
               result.address,
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
+            ),
+            const SizedBox(height: 4),
+            // Category badge
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(
+                color: _getCategoryColor(categoryDisplayName).withOpacity(0.1),
+                borderRadius: BorderRadius.circular(4),
+                border: Border.all(
+                  color:
+                      _getCategoryColor(categoryDisplayName).withOpacity(0.3),
+                ),
+              ),
+              child: Text(
+                categoryDisplayName,
+                style: TextStyle(
+                  fontSize: 10,
+                  color: _getCategoryColor(categoryDisplayName),
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
             ),
             const SizedBox(height: 4),
             Row(
@@ -552,6 +725,21 @@ class _AddPlacesScreenState extends State<AddPlacesScreen>
     );
   }
 
+  Color _getCategoryColor(String categoryName) {
+    switch (categoryName) {
+      case 'Food & Dining':
+        return Colors.orange;
+      case 'Attractions':
+        return Colors.purple;
+      case 'Shopping':
+        return Colors.blue;
+      case 'Outdoors':
+        return Colors.green;
+      default:
+        return Colors.grey;
+    }
+  }
+
   Widget _buildPlaceIcon(search.PlaceSearchResult result) {
     IconData iconData;
     Color iconColor;
@@ -569,15 +757,10 @@ class _AddPlacesScreenState extends State<AddPlacesScreen>
         iconData = Icons.shopping_bag;
         iconColor = Colors.blue;
         break;
-      case 'lodging':
-      case 'hotel':
-        iconData = Icons.hotel;
-        iconColor = Colors.purple;
-        break;
       case 'tourist_attraction':
       case 'museum':
         iconData = Icons.museum;
-        iconColor = Colors.brown;
+        iconColor = Colors.purple;
         break;
       case 'park':
         iconData = Icons.park;
